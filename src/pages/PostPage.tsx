@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, BadgeCheck, Bookmark, ChefHat, CircleCheck, Heart, Link2, SearchX, ThumbsDown, ThumbsUp } from 'lucide-react'
+import { ArrowLeft, BadgeCheck, Bookmark, ChefHat, CircleCheck, Heart, Link2, SearchX, ThumbsDown, ThumbsUp, Trash2 } from 'lucide-react'
 import type { AiMeta, Try } from '../data/types'
 import { topicLabel } from '../data/types'
 import { Rejected, useStore } from '../store'
@@ -8,6 +8,7 @@ import { useUi } from '../ui-context'
 import { cx, num, plural, timeAgo } from '../lib'
 import { Masonry } from '../components/Masonry'
 import { Gallery } from '../components/Gallery'
+import { Sheet } from '../components/Sheet'
 import { Avatar, Button, Empty, IconButton, Picture } from '../components/ui'
 
 /** Сколько отзывов видно сразу; остальные — по кнопке */
@@ -17,9 +18,12 @@ export function PostPage() {
   const { id = '' } = useParams()
   const [params] = useSearchParams()
   const nav = useNavigate()
-  const { post, user, triesOf, toggleFollow, follows, likes, toggleLike, savedIn, posts, me } = useStore()
+  const { post, user, triesOf, toggleFollow, follows, likes, toggleLike, savedIn, posts, me, deletePost } = useStore()
   const { openSave, openTried, toast } = useUi()
   const [allTries, setAllTries] = useState(false)
+  const [askDelete, setAskDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteErr, setDeleteErr] = useState('')
   // ТЕСТ: показать, что увидел ИИ; убрать после тестов
   const [showAi, setShowAi] = useState(false)
   const triesRef = useRef<HTMLElement>(null)
@@ -58,6 +62,19 @@ export function PostPage() {
     }
   }
 
+  const remove = async () => {
+    setDeleting(true)
+    setDeleteErr('')
+    try {
+      await deletePost(p.id)
+      toast('Идея удалена')
+      nav(`/u/${me.id}`, { replace: true })
+    } catch (e) {
+      setDeleting(false)
+      setDeleteErr(e instanceof Rejected ? e.reasons.join('. ') : 'Не получилось удалить. Попробуйте ещё раз.')
+    }
+  }
+
   const likeButton = (cls: string) => (
     <button type="button" onClick={() => toggleLike(p.id)} aria-pressed={liked} aria-label="Нравится" className={cls}>
       <Heart size={20} className={cx(liked && 'fill-rose-500 text-rose-500')} />
@@ -71,6 +88,7 @@ export function PostPage() {
         <div className="mb-3 flex items-center gap-2">
           <IconButton icon={ArrowLeft} label="Назад" onClick={() => (window.history.length > 1 ? nav(-1) : nav('/'))} />
           <div className="flex-1" />
+          {isMine && <IconButton icon={Trash2} label="Удалить идею" onClick={() => setAskDelete(true)} />}
           <IconButton icon={Link2} label="Поделиться" onClick={share} />
           <IconButton
             icon={Bookmark}
@@ -256,6 +274,25 @@ export function PostPage() {
           <Masonry posts={more} />
         </section>
       )}
+
+      <Sheet open={askDelete} onClose={() => !deleting && setAskDelete(false)} title="Удалить идею?">
+        <p className="text-sm leading-relaxed">
+          «{p.title}» пропадёт у всех: вместе с картинками, отметками «Я попробовал» и ответами на них. Вернуть не получится.
+        </p>
+        {deleteErr && (
+          <p className="mt-3 rounded-xl bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-500" role="alert">
+            {deleteErr}
+          </p>
+        )}
+        <div className="mt-5 grid grid-cols-2 gap-2">
+          <Button kind="neutral" onClick={() => setAskDelete(false)} disabled={deleting}>
+            Отмена
+          </Button>
+          <Button kind="danger" icon={Trash2} onClick={remove} disabled={deleting}>
+            {deleting ? 'Удаляем…' : 'Удалить'}
+          </Button>
+        </div>
+      </Sheet>
     </>
   )
 }

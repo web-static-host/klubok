@@ -284,9 +284,14 @@ const RULES = `Правила соцсети «Клубок» (рецепты, �
 — всё, что нарушает законодательство Российской Федерации.
 Обычные бытовые вещи — не нарушение: кухонный нож, огонь мангала, уксус, спирт для протирки, вино в рецепте соуса и т.п.`
 
-async function aiCheckText(text: string): Promise<Verdict> {
+/** Пояснение для ИИ при проверке профиля: ник на нашем сайте — не контакт */
+const PROFILE_NOTE = `Это имя и ник, которые человек выбирает себе на нашем сайте, и текст «о себе».
+Ник на нашем сайте — НЕ контакт и НЕ ник в соцсети: любые сочетания латинских букв, цифр и _ разрешены (marina_cook, test_2024, proxy_zz, klubok_fan).
+Отклоняй ник или имя только за мат, оскорбления, запрещённые темы или явную ссылку наружу (домен, t.me, телефон). Странный или бессмысленный ник — не нарушение.`
+
+async function aiCheckText(text: string, note = ''): Promise<Verdict> {
   return gcAsk(
-    `Ты — модератор. ${RULES}\nОтветь только JSON без пояснений: {"ok": true или false, "reasons": ["коротко по-русски, что нарушено"]}`,
+    `Ты — модератор. ${RULES}${note ? `\n${note}` : ''}\nОтветь только JSON без пояснений: {"ok": true или false, "reasons": ["коротко по-русски, что нарушено"]}`,
     `Проверь текст пользователя:\n"""${text}"""`,
   )
 }
@@ -409,13 +414,19 @@ async function checkImage(img: ImgIn, uid: string, allowPeople: boolean): Promis
 }
 
 /** Проверка текстов: быстрые правила, затем ИИ. ИИ недоступен — только быстрые правила */
-async function checkTexts(texts: string[]): Promise<{ ok: boolean; reasons: string[]; ai: boolean }> {
+/** profile — тексты профиля [имя, ник, о себе]: ИИ получает их с подписями и пояснением про ник */
+async function checkTexts(texts: string[], profile = false): Promise<{ ok: boolean; reasons: string[]; ai: boolean }> {
   const text = texts.filter(Boolean).join('\n')
   const reasons = quickTextCheck(text)
   if (reasons.length) return { ok: false, reasons, ai: false }
   if (!text.trim()) return { ok: true, reasons: [], ai: true }
   try {
-    const v = await aiCheckText(text)
+    const v = profile
+      ? await aiCheckText(
+          ['Имя', 'Ник', 'О себе'].map((l, i) => texts[i] && `${l}: ${texts[i]}`).filter(Boolean).join('\n'),
+          PROFILE_NOTE,
+        )
+      : await aiCheckText(text)
     return { ok: v.ok, reasons: v.ok ? [] : v.reasons.length ? v.reasons : ['Текст нарушает правила'], ai: true }
   } catch (e) {
     console.error('ИИ недоступен:', e instanceof Error ? e.message : e)
@@ -424,8 +435,8 @@ async function checkTexts(texts: string[]): Promise<{ ok: boolean; reasons: stri
 }
 
 /** Тексты + картинки. Картинки по очереди: у личного тарифа GigaChat один поток */
-export async function moderate(texts: string[], images: ImgIn[], uid: string, allowPeople = false) {
-  const t = await checkTexts(texts)
+export async function moderate(texts: string[], images: ImgIn[], uid: string, allowPeople = false, profile = false) {
+  const t = await checkTexts(texts, profile)
   if (!t.ok) return { ok: false, reasons: t.reasons, ai: t.ai, tags: [] as string[], meta: emptyMeta(), aiText: '' }
   const checks: ImageCheck[] = []
   for (const img of images) checks.push(await checkImage(img, uid, allowPeople))
@@ -457,7 +468,7 @@ async function handleTaken(handle: string, exceptId?: string) {
 
 const str = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ').slice(0, max) : '')
 
-async function handle(req: Request): Promise<Response> {
+export async function handle(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
 
   if (req.method === 'GET') {
@@ -484,7 +495,7 @@ async function handle(req: Request): Promise<Response> {
     const bad = profileErrors(name, handle)
     if (bad.length) return json({ ok: false, reasons: bad })
     if (await handleTaken(handle)) return json({ ok: false, reasons: ['Такой ник уже занят — придумайте другой'] })
-    const m = await checkTexts([name, handle])
+    const m = await checkTexts([name, handle], true)
     return json(m.ok ? { ok: true } : { ok: false, reasons: m.reasons })
   }
 
@@ -566,6 +577,23 @@ async function handle(req: Request): Promise<Response> {
       return json({ ok: true, row: data })
     }
 
+    // удалить свою идею: пост, отзывы и ответы к нему (каскадом в базе) и все картинки — свои и фото из отзывов
+    case 'delete-post': {
+      const id = str(body.postId, 40)
+      const { data: post } = await admin.from('posts').select('author_id, images').eq('id', id).maybeSingle()
+      if (!post) return json({ ok: true })
+      if (post.author_id !== uid) return json({ ok: false, reasons: ['Удалить можно только свою идею'] }, 403)
+      const { data: tries } = await admin.from('tries').select('img').eq('post_id', id)
+      const imgs = [...((post.images as ImgIn[]) ?? []), ...(tries ?? []).map((t) => t.img as ImgIn | null)].filter(
+        (i): i is ImgIn => typeof i?.src === 'string' && i.src.startsWith(PUBLIC_PREFIX) && !i.src.startsWith(`${PUBLIC_PREFIX}demo/`),
+      )
+      const { error } = await admin.from('posts').delete().eq('id', id)
+      if (error) return json({ ok: false, reasons: ['Не получилось удалить'], detail: error.message }, 500)
+      await removeImages(imgs)
+      if (imgs.length) await admin.from('image_checks').delete().in('path', imgs.map((i) => i.src.slice(PUBLIC_PREFIX.length)))
+      return json({ ok: true, row: null })
+    }
+
     case 'profile': {
       const name = str(body.name, 50)
       const handle = str(body.handle, 30).toLowerCase()
@@ -579,7 +607,7 @@ async function handle(req: Request): Promise<Response> {
         if (avatar) await removeImages([avatar])
         return json({ ok: false, reasons: ['Такой ник уже занят — придумайте другой'] })
       }
-      const m = await moderate([name, handle, bio], avatar ? [avatar] : [], uid, true)
+      const m = await moderate([name, handle, bio], avatar ? [avatar] : [], uid, true, true)
       if (!m.ok) {
         if (avatar) await removeImages([avatar])
         return json({ ok: false, reasons: m.reasons })

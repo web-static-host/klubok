@@ -42,6 +42,8 @@ interface Store {
   toggleFollow: (userId: string) => void
   toggleLike: (postId: string) => void
   addPost: (p: NewPost) => Promise<string>
+  /** удалить свою идею (вместе с отзывами и картинками); не вышло — исключение Rejected */
+  deletePost: (id: string) => Promise<void>
   /** загрузить своё фото в хранилище (сразу после выбора) */
   uploadImg: (img: Img) => Promise<Img>
   /** проверить загруженную картинку по правилам; нет связи или старая функция — исключение */
@@ -435,6 +437,13 @@ export function StoreProvider({
       const p = toPost((await publish({ action: 'post', type: data.type, topic: data.topic, title: data.title, images })) as PostRow)
       setPosts((ps) => [p, ...ps])
       return p.id
+    },
+    deletePost: async (id) => {
+      await publish({ action: 'delete-post', postId: id })
+      setPosts((ps) => ps.filter((p) => p.id !== id))
+      setTries((ts) => ts.filter((t) => t.postId !== id))
+      setLikes((ls) => ls.filter((x) => x !== id))
+      setFolders((fs) => fs.map((f) => ({ ...f, postIds: f.postIds.filter((x) => x !== id), done: f.done.filter((x) => x !== id) })))
     },
     addTry: async (postId, ok, text, img) => {
       if (!uid) throw new Error('not signed in')

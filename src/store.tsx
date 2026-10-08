@@ -100,6 +100,8 @@ interface PostRow {
   images: Img[]
   tags: string[]
   ai_tags: string[]
+  ai_text: string | null
+  checked_by_ai: boolean
   likes_count: number
   created_at: string
 }
@@ -132,6 +134,7 @@ const toPost = (r: PostRow): Post => ({
   images: r.images,
   likes: r.likes_count,
   tags: [...r.tags, ...(r.ai_tags ?? [])],
+  ai: { tags: r.ai_tags ?? [], text: r.ai_text ?? '', checked: !!r.checked_by_ai },
 })
 interface ReplyRow {
   id: string

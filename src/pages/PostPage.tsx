@@ -20,6 +20,8 @@ export function PostPage() {
   const { post, user, triesOf, toggleFollow, follows, likes, toggleLike, savedIn, posts, me } = useStore()
   const { openSave, openTried, toast } = useUi()
   const [allTries, setAllTries] = useState(false)
+  // ТЕСТ: показать, что увидел ИИ; убрать после тестов
+  const [showAi, setShowAi] = useState(false)
   const triesRef = useRef<HTMLElement>(null)
   const p = post(id)
 
@@ -98,7 +100,36 @@ export function PostPage() {
               >
                 {topicLabel(p.topic)}
               </Link>
+              {/* ТЕСТ: кнопка «Теги ИИ» — убрать после тестов */}
+              <button
+                type="button"
+                onClick={() => setShowAi((v) => !v)}
+                aria-expanded={showAi}
+                className="press rounded-full border border-dashed border-line-strong px-2.5 py-1 text-xs font-semibold hover:bg-active"
+              >
+                Теги ИИ (тест)
+              </button>
             </div>
+            {showAi && (
+              <div className="card mb-3 p-3 text-xs leading-relaxed">
+                <p className="font-semibold">{p.ai?.checked ? 'Проверено ИИ' : 'ИИ не проверял (тестовый пост или ИИ был недоступен)'}</p>
+                {!!p.ai?.tags.length && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {p.ai.tags.map((t) => (
+                      <span key={t} className="rounded-full border border-line bg-surface px-2 py-0.5 font-semibold">
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {p.ai?.text && (
+                  <details className="mt-2">
+                    <summary className="font-semibold">Описание и текст с картинок</summary>
+                    <p className="mt-1 whitespace-pre-wrap">{p.ai.text}</p>
+                  </details>
+                )}
+              </div>
+            )}
             <h1 className="text-2xl leading-8 font-bold md:text-[28px] md:leading-9">{p.title}</h1>
 
             {/* автор */}

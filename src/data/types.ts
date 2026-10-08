@@ -38,6 +38,8 @@ export interface Post {
   likes: number
   /** скрытые слова для поиска (свои и от ИИ); на сайте не показываются */
   tags: string[]
+  /** ТЕСТ: что увидел ИИ — показывается кнопкой «Теги ИИ» на странице поста; убрать после тестов */
+  ai?: { tags: string[]; text: string; checked: boolean }
 }
 
 export interface Try {

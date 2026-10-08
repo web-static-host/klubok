@@ -1,6 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { AiMeta, Folder, Img, Post, PostType, Reply, Topic, Try, User } from './data/types'
-import { canonical, supabase } from './supabase'
+import { PUBLIC_QUERIES, canonical, restGet, supabase } from './supabase'
 
 /**
  * Состояние сайта. Данные — в базе Supabase, тема оформления — в браузере.
@@ -164,6 +164,25 @@ const toTry = (r: TryRow): Try => ({
   createdAt: Date.parse(r.created_at),
 })
 
+type PublicRows = [ProfileRow[], PostRow[], TryRow[], ReplyRow[]]
+/** Последние загруженные лента, авторы и отзывы — при следующем заходе показываем сразу, а свежие подгружаем следом */
+const CACHE = 'klubok.data.v1'
+function loadCache(): PublicRows | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(CACHE) ?? 'null')
+    return Array.isArray(v) && v.length === 4 && v.every(Array.isArray) ? (v as PublicRows) : null
+  } catch {
+    return null
+  }
+}
+function saveCache(rows: PublicRows) {
+  try {
+    localStorage.setItem(CACHE, JSON.stringify(rows))
+  } catch {
+    /* места нет или запрещено — не страшно */
+  }
+}
+
 /** Ошибка запроса → исключение */
 function check<T extends { error: unknown }>(res: T): T {
   if (res.error) throw res.error
@@ -239,16 +258,18 @@ export function StoreProvider({
   /** пришли по ссылке «забыли пароль» */
   recovery?: boolean
 }) {
-  const [ready, setReady] = useState(false)
+  const [cached] = useState(loadCache)
+  // данные есть (из прошлого захода или уже загружены)
+  const [loaded, setLoaded] = useState(!!cached)
   const [failed, setFailed] = useState(false)
   const [attempt, setAttempt] = useState(0)
   const [uid, setUid] = useState<string | null>(null)
   const [email, setEmail] = useState('')
   const [authKnown, setAuthKnown] = useState(false)
-  const [users, setUsers] = useState<User[]>([])
-  const [posts, setPosts] = useState<Post[]>([])
-  const [tries, setTries] = useState<Try[]>([])
-  const [replies, setReplies] = useState<Reply[]>([])
+  const [users, setUsers] = useState<User[]>(() => cached?.[0].map(toUser) ?? [])
+  const [posts, setPosts] = useState<Post[]>(() => cached?.[1].map(toPost) ?? [])
+  const [tries, setTries] = useState<Try[]>(() => cached?.[2].map(toTry) ?? [])
+  const [replies, setReplies] = useState<Reply[]>(() => cached?.[3].map(toReply) ?? [])
   const [folders, setFolders] = useState<Folder[]>([])
   const [follows, setFollows] = useState<string[]>([])
   const [likes, setLikes] = useState<string[]>([])
@@ -267,31 +288,44 @@ export function StoreProvider({
     return () => data.subscription.unsubscribe()
   }, [])
 
-  // общие данные: авторы, посты, отзывы. Перезагружаем и при входе — чтобы появился свой профиль.
+  // общие данные: авторы, посты, отзывы. Грузятся сразу, не дожидаясь проверки входа (они одинаковы для всех).
+  const loadedRef = useRef(loaded)
   useEffect(() => {
-    if (!authKnown) return
     let live = true
     Promise.all([
-      supabase.from('profiles').select('*'),
-      supabase.from('posts').select('*').order('created_at', { ascending: false }).limit(1000),
-      supabase.from('tries').select('*').order('created_at', { ascending: false }).limit(5000),
-      supabase.from('try_replies').select('*').order('created_at').limit(10000),
+      restGet<ProfileRow[]>(PUBLIC_QUERIES[0]),
+      restGet<PostRow[]>(PUBLIC_QUERIES[1]),
+      restGet<TryRow[]>(PUBLIC_QUERIES[2]),
+      restGet<ReplyRow[]>(PUBLIC_QUERIES[3]).catch(() => [] as ReplyRow[]),
     ])
-      .then(([u, p, t, r]) => {
+      .then((rows) => {
         if (!live) return
-        setUsers((check(u).data as ProfileRow[]).map(toUser))
-        setPosts((check(p).data as PostRow[]).map(toPost))
-        setTries((check(t).data as TryRow[]).map(toTry))
-        // ответов может не быть, пока в базе не запущено обновление 002 — сайт работает и без них
-        setReplies(r.error ? [] : (r.data as ReplyRow[]).map(toReply))
+        const [u, p, t, r] = rows
+        setUsers(u.map(toUser))
+        setPosts(p.map(toPost))
+        setTries(t.map(toTry))
+        setReplies(r.map(toReply))
+        saveCache(rows)
         setFailed(false)
-        setReady(true)
+        setLoaded(true)
+        loadedRef.current = true
       })
-      .catch(() => live && setFailed(true))
+      // показываем прошлые данные — ошибку обновления не показываем
+      .catch(() => live && !loadedRef.current && setFailed(true))
     return () => {
       live = false
     }
-  }, [authKnown, uid, attempt])
+  }, [attempt])
+
+  // вошёл человек, которого нет среди авторов (только что зарегистрировался) — подгружаем профили ещё раз
+  const askedProfile = useRef<string | null>(null)
+  useEffect(() => {
+    if (!uid || !loaded || users.some((u) => u.id === uid) || askedProfile.current === uid) return
+    askedProfile.current = uid
+    restGet<ProfileRow[]>(PUBLIC_QUERIES[0])
+      .then((u) => setUsers(u.map(toUser)))
+      .catch(() => {})
+  }, [uid, loaded, users])
 
   // свои данные: папки, подписки, лайки
   const [mineAttempt, setMineAttempt] = useState(0)
@@ -380,12 +414,14 @@ export function StoreProvider({
     if (!img.src?.startsWith('data:')) return img
     const blob = await (await fetch(img.src)).blob()
     const path = `${uid}/${crypto.randomUUID()}.jpg`
-    check(await supabase.storage.from('images').upload(path, blob, { contentType: 'image/jpeg' }))
+    // имя файла всегда новое — браузер может хранить картинку у себя год и не переспрашивать
+    check(await supabase.storage.from('images').upload(path, blob, { contentType: 'image/jpeg', cacheControl: '31536000' }))
     return { src: canonical(supabase.storage.from('images').getPublicUrl(path).data.publicUrl), ratio: img.ratio }
   }
 
   const value: Store = {
-    ready,
+    // проверка входа идёт одновременно с загрузкой данных, ждём обе — чтобы не мигала кнопка «Войти»
+    ready: loaded && authKnown,
     failed,
     retry: () => setAttempt((n) => n + 1),
     authed: !!uid,

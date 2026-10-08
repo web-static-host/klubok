@@ -22,14 +22,18 @@ export function Picture({
   contain?: boolean
 }) {
   const [loaded, setLoaded] = useState(false)
+  // связь оборвалась — пробуем ещё раз (до двух раз)
+  const [retry, setRetry] = useState(0)
+  const src = imgSrc(img)
   return (
     <div className={cx('relative overflow-hidden bg-elevated', className)} style={fill ? undefined : { aspectRatio: `1 / ${img.ratio}` }}>
       <img
-        src={imgSrc(img)}
+        src={retry ? `${src}${src.includes('?') ? '&' : '?'}r=${retry}` : src}
         alt={alt}
         loading="lazy"
         decoding="async"
         onLoad={() => setLoaded(true)}
+        onError={() => retry < 2 && setTimeout(() => setRetry((n) => n + 1), 500 * (retry + 1))}
         className={cx(
           'absolute inset-0 h-full w-full transition-opacity duration-300',
           contain ? 'object-contain' : 'object-cover',

@@ -19,6 +19,37 @@
         document.documentElement.dataset.theme = dark ? 'dark' : 'light';
       } catch (e) {}
     </script>
+    <script>
+      // Лента, авторы и отзывы — запрашиваем сразу, пока грузится код сайта. Сайт возьмёт уже начатые запросы
+      // (список должен совпадать с PUBLIC_QUERIES в src/supabase.ts). Соединение с сервером открываем заранее.
+      try {
+        var api = '%VITE_API_URL%';
+        if (!api || api.charAt(0) === '%') api = '%VITE_SUPABASE_URL%';
+        api = api.replace(/\/+$/, '');
+        var key = '%VITE_SUPABASE_PUBLISHABLE_KEY%';
+        [false, true].forEach(function (cors) {
+          var l = document.createElement('link');
+          l.rel = 'preconnect';
+          l.href = new URL(api).origin;
+          if (cors) l.crossOrigin = 'anonymous';
+          document.head.appendChild(l);
+        });
+        window.__klubokPre = {};
+        [
+          'profiles?select=*',
+          'posts?select=*&order=created_at.desc&limit=1000',
+          'tries?select=*&order=created_at.desc&limit=5000',
+          'try_replies?select=*&order=created_at.asc&limit=10000',
+        ].forEach(function (q) {
+          var p = fetch(api + '/rest/v1/' + q + '&apikey=' + key).then(function (r) {
+            if (!r.ok) throw new Error(r.status);
+            return r.json();
+          });
+          p.catch(function () {});
+          window.__klubokPre[q] = p;
+        });
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

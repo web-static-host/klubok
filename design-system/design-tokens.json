@@ -1,0 +1,228 @@
+{
+  "$comment": "Токены дизайна «Списки.Заметки». Значения взяты из кода (src/index.css, tailwind.config.js, компоненты). Единицы: px = dp на Android, размеры шрифта в px = sp. Цвета — hex или rgba. Описание и правила применения — в DESIGN_SYSTEM.md.",
+
+  "font": {
+    "family": "Manrope",
+    "fallback": "system-ui, sans-serif",
+    "weights": { "regular": 400, "medium": 500, "semibold": 600, "bold": 700 },
+    "features": "cv11, ss01",
+    "mono": "JetBrains Mono (только таймеры/длительность аудио)",
+    "display": "Bricolage Grotesque — подключён, но на основных экранах НЕ используется (только в редком Modal). Заголовки экранов — Manrope Bold."
+  },
+
+  "typeScale": {
+    "screenTitle":   { "size": 24, "lineHeight": 32, "weight": 700, "comment": "Заголовок вкладки: «Все списки», «Настройки», «Избранное»" },
+    "detailTitle":   { "size": 18, "lineHeight": 28, "weight": 700, "comment": "Заголовок открытого списка/заметки в шапке" },
+    "sheetTitle":    { "size": 18, "lineHeight": 28, "weight": 700, "comment": "Заголовок шторки" },
+    "folderTitle":   { "size": 20, "lineHeight": 28, "weight": 700, "comment": "Заголовок внутри папки" },
+    "body":          { "size": 16, "lineHeight": 24, "weight": 400, "comment": "Текст заметки (редактор)" },
+    "itemTitle":     { "size": 14, "lineHeight": 20, "weight": 600, "comment": "Название пункта, карточки, строки настроек (строки — 700)" },
+    "control":       { "size": 14, "lineHeight": 20, "weight": 500, "comment": "Подпись переключателя" },
+    "caption":       { "size": 12, "lineHeight": 16, "weight": 400, "comment": "Подзаголовок/описание под названием" },
+    "sectionLabel":  { "size": 12, "lineHeight": 16, "weight": 700, "uppercase": true, "letterSpacing": "0.05em", "comment": "Заголовок раздела: «ВНЕШНИЙ ВИД», «КУПЛЕНО · 2»" },
+    "chip":          { "size": 12, "lineHeight": 16, "weight": 600, "comment": "Плашка количества «2 л», кнопка «Очистить»" },
+    "navLabel":      { "size": 10, "lineHeight": 10, "weight": 600, "comment": "Подпись вкладки нижнего меню" },
+    "timestamp":     { "size": 10, "lineHeight": 14, "weight": 400, "comment": "Время в сообщении" }
+  },
+
+  "color": {
+    "light": {
+      "background":        "#F5F7FA",
+      "surface":           "rgba(255,255,255,0.85)",
+      "surfaceStrong":     "rgba(255,255,255,0.95)",
+      "surfaceCard":       "rgba(255,255,255,0.92)",
+      "surfaceInput":      "rgba(255,255,255,0.80)",
+      "elevated":          "rgba(15,23,42,0.15)",
+      "activeTab":         "rgba(20,184,166,0.12)",
+      "textPrimary":       "#0F172A",
+      "textSecondary":     "#334155",
+      "textMuted":         "#64748B",
+      "textFaint":         "#94A3B8",
+      "borderSubtle":      "rgba(15,23,42,0.08)",
+      "borderStrong":      "rgba(15,23,42,0.12)",
+      "shadowCard":        "0 8px 24px -8px rgba(15,23,42,0.12)",
+      "glowTop":           "rgba(20,184,166,0.12)",
+      "glowBottomRight":   "rgba(6,182,212,0.06)",
+      "noiseOpacity":      0.15
+    },
+    "dark": {
+      "background":        "#070D12",
+      "surface":           "rgba(15,27,35,0.80)",
+      "surfaceStrong":     "rgba(10,18,25,0.92)",
+      "surfaceCard":       "rgba(15,27,35,0.90)",
+      "surfaceInput":      "rgba(10,18,25,0.60)",
+      "elevated":          "rgba(22,37,49,0.60)",
+      "activeTab":         "rgba(20,184,166,0.15)",
+      "textPrimary":       "#F1F5F9",
+      "textSecondary":     "#CBD5E1",
+      "textMuted":         "#94A3B8",
+      "textFaint":         "#64748B",
+      "borderSubtle":      "rgba(255,255,255,0.06)",
+      "borderStrong":      "rgba(255,255,255,0.10)",
+      "shadowCard":        "0 10px 30px -10px rgba(0,0,0,0.6)",
+      "glowTop":           "rgba(20,184,166,0.15)",
+      "glowBottomRight":   "rgba(6,182,212,0.08)",
+      "noiseOpacity":      0.5
+    },
+    "noBlurFallback": {
+      "$comment": "Значения «стекла» без размытия (в приложении — для старых WebView). Для Compose, где размытие фона дорого, это готовая замена.",
+      "light": { "surface": "#FFFFFF", "surfaceStrong": "#FFFFFF", "elevated": "#FFFFFF", "surfaceInput": "#FFFFFF", "surfaceCard": "#FFFFFF", "borderSubtle": "rgba(15,23,42,0.15)", "borderStrong": "rgba(15,23,42,0.22)", "activeTab": "rgba(20,184,166,0.30)" },
+      "dark":  { "surface": "#0F1B23", "surfaceStrong": "#0A1219", "elevated": "#16252C", "surfaceInput": "#0A1219", "surfaceCard": "#0F1B23", "borderSubtle": "rgba(255,255,255,0.12)", "borderStrong": "rgba(255,255,255,0.18)", "activeTab": "rgba(20,184,166,0.30)" }
+    },
+    "accent": {
+      "teal400": "#2DD4BF",
+      "teal500": "#14B8A6",
+      "cyan500": "#06B6D4",
+      "cyan600": "#0891B2",
+      "brandRamp": { "50": "#ECFEFF", "100": "#CFFAFE", "200": "#A5F3FC", "300": "#67E8F9", "400": "#22D3EE", "500": "#06B6D4", "600": "#0891B2", "700": "#0E7490", "800": "#155E75", "900": "#164E63" },
+      "inkRamp":   { "950": "#070D12", "900": "#0A1219", "800": "#0F1B23", "700": "#162531", "600": "#1F3340", "500": "#2A4250" },
+      "warm":      { "400": "#FB923C", "500": "#F97316", "600": "#EA580C" }
+    },
+    "semantic": {
+      "primaryGradient":   ["#14B8A6", "#0891B2"],
+      "primaryGradientAngle": "135deg (слева-сверху → справа-вниз)",
+      "brandGradient3":    ["#2DD4BF", "#06B6D4", "#0891B2"],
+      "brandGradientSoft": ["rgba(45,212,191,0.15)", "rgba(8,145,178,0.15)"],
+      "activeOutline":     "rgba(45,212,191,0.30)",
+      "accentText":        "#14B8A6",
+      "accentChipBorder":  "rgba(45,212,191,0.40)",
+      "sheetShadow":       "0 -8px 32px rgba(0,0,0,0.40)",
+      "fileIconGradient":  ["#38BDF8", "#2563EB"],
+      "linkIconGradient":  ["#818CF8", "#2563EB"],
+      "priceIconGradient": ["#34D399", "#0D9488"],
+      "folderIconGradient":["#94A3B8", "#475569"],
+      "toggleOnGradient":  ["#2DD4BF", "#06B6D4"],
+      "toggleOff":         "rgba(71,85,105,0.40)",
+      "destructive":       "#EF4444",
+      "destructiveGradient": ["#EF4444", "#DC2626"],
+      "success":           "#14B8A6",
+      "successBg":         "rgba(20,184,166,0.10)",
+      "error":             "#F43F5E",
+      "errorBg":           "rgba(244,63,94,0.10)",
+      "favoriteStar":      "#FACC15",
+      "overlayScrim":      "rgba(0,0,0,0.40)"
+    },
+    "palette": {
+      "$comment": "12 цветовых пар [светлый, тёмный] — для градиентов (карточки, папки, иконки-плашки). Порядок — как в выборе цвета.",
+      "turquoise": ["#2DD4BF", "#0891B2"],
+      "emerald":   ["#6EE7B7", "#059669"],
+      "sky":       ["#38BDF8", "#2563EB"],
+      "indigo":    ["#818CF8", "#4338CA"],
+      "violet":    ["#C084FC", "#7C3AED"],
+      "pink":      ["#F9A8D4", "#DB2777"],
+      "coral":     ["#FDA4AF", "#E11D48"],
+      "red":       ["#FCA5A5", "#DC2626"],
+      "orange":    ["#FDBA74", "#EA580C"],
+      "amber":     ["#FCD34D", "#D97706"],
+      "gray":      ["#64748B", "#475569"],
+      "graphite":  ["#94A3B8", "#334155"]
+    },
+    "typeAccents": {
+      "$comment": "Цвет «типа» сущности [светлый, тёмный]. В списках: быстрые покупки, хочу купить, сборы, свой, заметка. Для нового приложения — образец, как давать каждому типу свой градиент.",
+      "quick":   ["#2DD4BF", "#0891B2"],
+      "planned": ["#A855F7", "#6366F1"],
+      "travel":  ["#FB923C", "#F97316"],
+      "custom":  ["#64748B", "#475569"],
+      "note":    ["#38BDF8", "#2563EB"]
+    },
+    "listSurface": {
+      "$comment": "Плашки поверх цветного фона открытого списка (getSurfaceVars). l/d — светлый и тёмный цвет типа. mix(a,b,t) — линейное смешение RGB.",
+      "light_tinted": { "itemBg": "mix(l, d, 0.5)", "itemFg": "#FFFFFF", "accent": "#FFFFFF", "accentBorder": "rgba(255,255,255,0.6)" },
+      "light_solid":  { "itemBg": "#FFFFFF", "itemFg": "#0F172A", "accent": "#14B8A6", "accentBorder": "rgba(45,212,191,0.4)" },
+      "dark_tinted":  { "itemBg": "mix(#0B141B, d, 0.5)", "itemFg": "#F1F5F9", "accent": "#14B8A6", "accentBorder": "rgba(45,212,191,0.4)" },
+      "dark_solid":   { "itemBg": "#1A2530", "itemFg": "#F1F5F9", "accent": "#14B8A6", "accentBorder": "rgba(45,212,191,0.4)" },
+      "inputBg":      { "light": "#FFFFFF", "dark": "#1A2530" },
+      "itemShadow":   { "light": "0 1px 3px rgba(15,23,42,0.16)", "dark": "0 1px 2px rgba(0,0,0,0.5)" },
+      "chipOnBackground": { "light": "rgba(255,255,255,0.85) / текст #0F172A", "dark": "rgba(0,0,0,0.40) / текст #F1F5F9" }
+    }
+  },
+
+  "radius": {
+    "xs": 6,
+    "sm": 12,
+    "md": 16,
+    "lg": 22,
+    "xl": 24,
+    "full": 9999,
+    "$comment": "md (16) — основной: карточки, кнопки, поля, пункты, плашки меню. sm (12) — пункты контекстного меню, сегменты. lg (22) — строка ввода внизу. xl (24) — верх шторки. full — круглые кнопки и «таблетки»."
+  },
+
+  "spacing": {
+    "unit": 4,
+    "screenPaddingList": 12,
+    "screenPaddingSettings": 16,
+    "cardPadding": 12,
+    "cardPaddingLarge": 16,
+    "itemPaddingX": 12,
+    "itemPaddingY": 10,
+    "gapBetweenCards": 8,
+    "gapBetweenSections": 16,
+    "sectionLabelToContent": 8,
+    "sheetPaddingX": 16,
+    "sheetPaddingBottom": 24
+  },
+
+  "size": {
+    "headerIconButton": 36,
+    "headerIconButtonRadius": 16,
+    "detailHeaderButton": 40,
+    "detailHeaderListIcon": 36,
+    "listCardIcon": { "compact": 28, "standard": 44, "large": 56 },
+    "listTileIcon": { "compact": 30, "standard": 48, "large": 60 },
+    "contextMenuWidth": 220,
+    "bottomNavTabPaddingY": 6,
+    "pillIconCircle": 24,
+    "pillCloseButton": 28,
+    "colorSwatchGrid": "6 колонок, gap 8, квадрат, радиус 12",
+    "fabOffset": "right 16, bottom = высота нижнего меню (вместе с системной панелью) + 12",
+    "fabDrag": { "longPressMs": 420, "dragScale": 1.05, "edgeMargin": 8, "haptic": "medium", "persist": "позиция левого верхнего угла, сохраняется навсегда" },
+    "bottomNav": { "height": 54, "sideMargin": 8, "bottomMargin": "max(системная панель навигации, 6)", "floating": true, "innerPadding": 4, "radius": 16, "tabHeight": 44 },
+    "iconEdit": {
+      "icon": 56, "iconShape": "фирменная форма иконки сущности — своя в каждом приложении, не задаётся системой", "glyph": 26,
+      "pencilBadge": { "size": 20, "background": "#FFFFFF", "shadow": 4, "overhang": 4, "lucideIcon": "Pencil", "glyph": 10, "strokeWidth": 2.4 },
+      "pencilTint": { "quick": "#0891B2", "planned": "#6366F1", "travel": "#F97316", "custom": "#475569", "note": "#3B82F6", "palette": "тёмная точка градиента" },
+      "picker": { "columns": 5, "gap": 8, "cell": 48, "allColored": true, "selectedScale": 1.1, "selectedShadow": "0 4 8 rgba(0,0,0,0.25)", "unselectedAlpha": 0.7, "closeOnSelect": true }
+    },
+    "splash": { "api": "androidx.core:core-splashscreen", "background": { "light": "#F5F7FA", "dark": "#070D12" }, "icon": "960x960, знак в центральной трети", "minVisibleMs": 600 },
+    "fab": 56,
+    "fabIcon": 26,
+    "iconInButton": 18,
+    "iconInRow": 20,
+    "navIcon": 20,
+    "rowIconBox": 40,
+    "toggleTrack": [44, 24],
+    "toggleThumb": 20,
+    "inputHeight": 44,
+    "sendButton": 40,
+    "sheetHandle": [40, 4],
+    "sheetCloseButton": 36,
+    "sheetMaxHeight": "90% экрана",
+    "buttonHeightPrimary": 48,
+    "messageMaxWidth": "78%"
+  },
+
+  "blur": {
+    "glass": "24px, saturate 180%",
+    "glassStrong": "32px, saturate 180%"
+  },
+
+  "motion": {
+    "press": { "scale": 0.96, "durationMs": 100 },
+    "colorTransitionMs": 200,
+    "transformTransitionMs": 150,
+    "toggleMs": 200,
+    "fadeUp": "opacity 0→1, translateY 8→0, 400ms, cubic-bezier(0.2,0.8,0.2,1)",
+    "scaleIn": "opacity 0→1, scale 0.95→1, 200ms, cubic-bezier(0.2,0.8,0.2,1)"
+  },
+
+  "haptics": {
+    "light": "обычный тап: вкладка, кнопка, переключатель, открыть карточку",
+    "medium": "долгое нажатие, удаление, создание, перетаскивание",
+    "setting": "вибрация отключаемая, по умолчанию выключена"
+  },
+
+  "icons": {
+    "set": "Lucide (outline)",
+    "strokeWidth": { "default": 2, "navInactive": 1.8, "navActive": 2.4, "fab": 2.4 }
+  }
+}

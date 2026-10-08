@@ -5,11 +5,12 @@ import { useStore } from '../store'
 import { useUi } from '../ui-context'
 import { cx, num, plural, timeAgo } from '../lib'
 import { MobileTop } from '../components/Layout'
-import { Avatar, Button, Empty, Picture, TopicBadge } from '../components/ui'
+import { Avatar, Button, Empty, TopicBadge } from '../components/ui'
+import { Gallery } from '../components/Gallery'
 
 /** Лента подписок — одна колонка, как в Instagram (DESIGN_WEB 3.4) */
 function FeedCard({ post }: { post: Post }) {
-  const { user, likes, toggleLike, triesOf, savedIn } = useStore()
+  const { user, likes, toggleLike, triesOf, savedIn, me } = useStore()
   const { openSave, openTried } = useUi()
   const a = user(post.authorId)
   const liked = likes.includes(post.id)
@@ -32,27 +33,7 @@ function FeedCard({ post }: { post: Post }) {
         <TopicBadge topic={post.topic} className="max-w-[45%]" />
       </header>
 
-      <Link to={`/p/${post.id}`} className="block rounded-xl">
-        {post.type === 'beforeafter' && post.images[1] ? (
-          <div className="grid grid-cols-2 gap-1.5">
-            {post.images.slice(0, 2).map((im, i) => (
-              <div key={i} className="relative">
-                <Picture img={{ ...im, ratio: 1.25 }} w={400} className="rounded-xl" />
-                <span className="glass-strong absolute bottom-2 left-2 rounded-full px-2.5 py-1 text-xs font-bold">
-                  {i ? 'После' : 'До'}
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <Picture
-            img={{ ...post.images[0], ratio: Math.min(post.images[0].ratio, 1.25) }}
-            w={700}
-            className="rounded-xl"
-            alt={post.title}
-          />
-        )}
-      </Link>
+      <Gallery post={post} maxRatio={1.25} />
 
       <div className="mt-2 flex items-center gap-1">
         <button
@@ -63,7 +44,7 @@ function FeedCard({ post }: { post: Post }) {
           className="press inline-flex h-10 items-center gap-1.5 rounded-2xl px-2 text-sm font-semibold whitespace-nowrap hover:bg-active"
         >
           <Heart size={20} className={cx(liked && 'fill-rose-500 text-rose-500')} />
-          {num(post.likes + (liked ? 1 : 0))}
+          {num(post.likes)}
         </button>
         <Link
           to={`/p/${post.id}?tab=tries`}
@@ -73,13 +54,15 @@ function FeedCard({ post }: { post: Post }) {
           <MessageCircle size={20} />
           {tries.length}
         </Link>
-        <button
-          type="button"
-          onClick={() => openTried(post.id)}
-          className="press ml-1 inline-flex h-9 items-center gap-1.5 rounded-2xl border chip-on px-3 text-sm font-semibold whitespace-nowrap"
-        >
-          <CircleCheck size={16} strokeWidth={2.4} className="text-accent" /> Я попробовал
-        </button>
+        {post.authorId !== me.id && (
+          <button
+            type="button"
+            onClick={() => openTried(post.id)}
+            className="press ml-1 inline-flex h-9 items-center gap-1.5 rounded-2xl border chip-on px-3 text-sm font-semibold whitespace-nowrap"
+          >
+            <CircleCheck size={16} strokeWidth={2.4} className="text-accent" /> Я попробовал
+          </button>
+        )}
         <button
           type="button"
           onClick={() => openSave(post.id)}
@@ -92,7 +75,6 @@ function FeedCard({ post }: { post: Post }) {
 
       <Link to={`/p/${post.id}`} className="mt-1 block px-1">
         <h2 className="text-sm font-semibold">{post.title}</h2>
-        {post.text && <p className="mt-1 line-clamp-3 text-sm leading-relaxed">{post.text}</p>}
         {ok > 0 && (
           <p className="mt-2 text-xs font-semibold text-accent">
             Получилось у {ok} {plural(ok, 'человека', 'человек', 'человек')}

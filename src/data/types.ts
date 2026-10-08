@@ -1,14 +1,14 @@
-export type PostType = 'photo' | 'recipe' | 'hack' | 'beforeafter'
+/** Обычный пост — 1–10 картинок; «до и после» — ровно две, показываются рядом */
+export type PostType = 'photo' | 'beforeafter'
 /** Категория: id из списка TOPICS или своя, вписанная автором (хранится как текст) */
 export type Topic = string
 
-/** Картинка: в прототипе — заглушка из фотостока по теме и номеру; в настоящем сайте — ссылка на файл в хранилище */
+/** Картинка: ссылка на файл в хранилище Supabase (только что выбранное фото — data:URL) */
 export interface Img {
-  /** готовый адрес (свои загрузки — data:URL) */
   src?: string
-  /** номер для заглушки */
+  /** тестовые данные: номер файла images/demo/<номер>.jpg (в базе уже подставлен адрес) */
   seed?: number
-  /** тема заглушки: food, kitchen, interior … */
+  /** тестовые данные: о чём картинка */
   tag?: string
   /** пропорция высота/ширина */
   ratio: number
@@ -24,31 +24,18 @@ export interface User {
   city?: string
 }
 
-export interface Recipe {
-  time: string
-  servings: number
-  difficulty: 'Легко' | 'Средне' | 'Сложно'
-  ingredients: string[]
-  steps: string[]
-}
-
-export interface Step {
-  text: string
-  img?: Img
-}
-
+/** Пост: вся информация — на картинках, текста нет, только название */
 export interface Post {
   id: string
   type: PostType
   topic: Topic
   title: string
-  text: string
   authorId: string
   createdAt: number
+  /** 1–10 картинок, листаются */
   images: Img[]
-  recipe?: Recipe
-  steps?: Step[]
   likes: number
+  /** скрытые слова для поиска (свои и от ИИ); на сайте не показываются */
   tags: string[]
 }
 
@@ -59,6 +46,15 @@ export interface Try {
   ok: boolean
   text?: string
   img?: Img
+  createdAt: number
+}
+
+/** Ответ на отзыв «Я попробовал». Отвечать может любой; у автора поста — метка «автор» */
+export interface Reply {
+  id: string
+  tryId: string
+  userId: string
+  text: string
   createdAt: number
 }
 

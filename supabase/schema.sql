@@ -4,7 +4,7 @@
 
 -- ─── Очистка ────────────────────────────────────────────────
 drop trigger if exists on_auth_user_created on auth.users;
-drop table if exists likes, follows, folder_items, folders, tries, posts, profiles cascade;
+drop table if exists try_replies, likes, follows, folder_items, folders, tries, posts, profiles cascade;
 drop function if exists handle_new_user, bump_post_likes, bump_followers, bump_post_tries cascade;
 drop type if exists post_type, post_topic cascade;
 
@@ -28,7 +28,8 @@ create table profiles (
 );
 
 -- ─── Посты ──────────────────────────────────────────────────
--- Картинка — объект { src?, seed?, tag?, ratio } (как тип Img на сайте).
+-- Вся идея — на картинках (1–10, листаются), текста нет — только название.
+-- Картинка — объект { src, ratio } (как тип Img на сайте). type: photo или beforeafter (две картинки рядом).
 create table posts (
   id uuid primary key default gen_random_uuid(),
   author_id uuid not null references profiles (id) on delete cascade,
@@ -36,13 +37,12 @@ create table posts (
   -- категория: id из списка на сайте (recipes, baking …) или своя, вписанная автором
   topic text not null check (char_length(topic) between 1 and 40),
   title text not null check (char_length(title) between 1 and 120),
-  text text not null default '',
-  images jsonb not null default '[]' check (jsonb_typeof(images) = 'array'),
-  -- рецепт: { time, servings, difficulty, ingredients[], steps[] }
-  recipe jsonb,
-  -- шаги лайфхака: [{ text, img? }]
-  steps jsonb,
+  images jsonb not null default '[]' check (jsonb_typeof(images) = 'array' and jsonb_array_length(images) between 1 and 10),
+  -- скрытые слова для поиска; на сайте не показываются
   tags text[] not null default '{}',
+  -- что ИИ увидел на картинках: слова и описание (для поиска и проверки «без людей»), пользователям не видно
+  ai_tags text[] not null default '{}',
+  ai_text text,
   likes_count int not null default 0,
   tries_count int not null default 0,
   tries_ok_count int not null default 0,
@@ -82,6 +82,17 @@ create table folder_items (
   added_at timestamptz not null default now(),
   primary key (folder_id, post_id)
 );
+
+-- ─── Ответы на отзывы «Я попробовал» ────────────────────────
+-- Обычных комментариев нет: отвечать можно только на отзыв. Отвечать может любой, у автора поста на сайте — метка «автор».
+create table try_replies (
+  id uuid primary key default gen_random_uuid(),
+  try_id uuid not null references tries (id) on delete cascade,
+  user_id uuid not null references profiles (id) on delete cascade,
+  text text not null check (char_length(text) between 1 and 500),
+  created_at timestamptz not null default now()
+);
+create index try_replies_try_idx on try_replies (try_id, created_at);
 
 -- ─── Подписки и лайки ───────────────────────────────────────
 create table follows (
@@ -140,9 +151,9 @@ end $$;
 create trigger tries_count after insert or update or delete on tries for each row execute function bump_post_tries();
 
 -- Счётчики нельзя подделать с сайта: менять разрешено только обычные поля.
-revoke update on profiles, posts, tries, folder_items from anon, authenticated;
+revoke update on profiles, posts, tries, folder_items, try_replies from anon, authenticated;
 grant update (name, handle, bio, city, colors, avatar_url) on profiles to authenticated;
-grant update (topic, title, text, images, recipe, steps, tags) on posts to authenticated;
+grant update (topic, title, images, tags) on posts to authenticated;
 grant update (ok, text, img) on tries to authenticated;
 grant update (done) on folder_items to authenticated;
 
@@ -173,6 +184,7 @@ alter table folders enable row level security;
 alter table folder_items enable row level security;
 alter table follows enable row level security;
 alter table likes enable row level security;
+alter table try_replies enable row level security;
 
 create policy "профили видны всем" on profiles for select using (true);
 create policy "свой профиль" on profiles for update to authenticated using (id = auth.uid()) with check (id = auth.uid());
@@ -183,7 +195,9 @@ create policy "свой пост: изменить" on posts for update to authe
 create policy "свой пост: удалить" on posts for delete to authenticated using (author_id = auth.uid());
 
 create policy "попытки видны всем" on tries for select using (true);
-create policy "своя попытка: создать" on tries for insert to authenticated with check (user_id = auth.uid());
+-- у своего поста «Я попробовал» нажать нельзя
+create policy "своя попытка: создать" on tries for insert to authenticated
+  with check (user_id = auth.uid() and not exists (select 1 from posts p where p.id = post_id and p.author_id = auth.uid()));
 create policy "своя попытка: изменить" on tries for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
 create policy "своя попытка: удалить" on tries for delete to authenticated using (user_id = auth.uid());
 
@@ -195,6 +209,10 @@ create policy "содержимое своих папок" on folder_items for a
 create policy "подписки видны всем" on follows for select using (true);
 create policy "своя подписка: создать" on follows for insert to authenticated with check (follower_id = auth.uid());
 create policy "своя подписка: удалить" on follows for delete to authenticated using (follower_id = auth.uid());
+
+create policy "ответы видны всем" on try_replies for select using (true);
+create policy "свой ответ: создать" on try_replies for insert to authenticated with check (user_id = auth.uid());
+create policy "свой ответ: удалить" on try_replies for delete to authenticated using (user_id = auth.uid());
 
 create policy "лайки видны всем" on likes for select using (true);
 create policy "свой лайк: создать" on likes for insert to authenticated with check (user_id = auth.uid());
@@ -212,3 +230,13 @@ create policy "фото: загрузка в свою папку" on storage.obj
   with check (bucket_id = 'images' and (storage.foldername(name))[1] = auth.uid()::text);
 create policy "фото: удаление своих" on storage.objects for delete to authenticated
   using (bucket_id = 'images' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- ─── Уже зарегистрированные пользователи ────────────────────
+-- При повторном запуске файла профили пересоздаются для всех, кто уже входил.
+insert into profiles (id, name, handle)
+select u.id, split_part(u.email, '@', 1), 'user_' || left(replace(u.id::text, '-', ''), 12)
+from auth.users u
+on conflict (id) do nothing;
+insert into folders (owner_id, name)
+select p.id, 'Хочу попробовать' from profiles p
+where not p.is_demo and not exists (select 1 from folders f where f.owner_id = p.id);

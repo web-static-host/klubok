@@ -20,7 +20,7 @@ export function UiProvider({ children }: { children: ReactNode }) {
   const [create, setCreate] = useState(false)
   const [toastText, setToastText] = useState<string | null>(null)
 
-  const { authed, setLoginOpen, notice, clearNotice } = useStore()
+  const { authed, setLoginOpen, notice, clearNotice, post, me } = useStore()
 
   const toast = (text: string) => {
     setToastText(text)
@@ -41,7 +41,16 @@ export function UiProvider({ children }: { children: ReactNode }) {
       authed ? fn(...a) : setLoginOpen(true)
 
   return (
-    <Ctx.Provider value={{ openSave: guard(setSave), openTried: guard(setTried), openCreate: guard(() => setCreate(true)), toast }}>
+    <Ctx.Provider
+      value={{
+        openSave: guard(setSave),
+        openTried: guard((id: string) =>
+          post(id)?.authorId === me.id ? toast('Это ваша идея — отзывы оставляют те, кто её повторил') : setTried(id),
+        ),
+        openCreate: guard(() => setCreate(true)),
+        toast,
+      }}
+    >
       {children}
       <SaveSheet postId={save} onClose={() => setSave(null)} />
       <TriedSheet postId={tried} onClose={() => setTried(null)} />

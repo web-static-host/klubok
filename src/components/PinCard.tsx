@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Bookmark, Check, CircleCheck } from 'lucide-react'
+import { Bookmark, Check, CircleCheck, Images } from 'lucide-react'
 import type { Post } from '../data/types'
 import { useStore } from '../store'
 import { useUi } from '../ui-context'
@@ -20,7 +20,28 @@ export function PinCard({ post, folderId }: { post: Post; folderId?: string }) {
     <article className="group fade-up min-w-0">
       <div className="relative">
         <Link to={`/p/${post.id}`} className="block rounded-2xl" aria-label={post.title}>
-          <Picture img={post.images[0]} w={500} className="rounded-2xl" alt={post.title} />
+          {post.type === 'beforeafter' && post.images[1] ? (
+            <div className="grid grid-cols-2 gap-0.5 overflow-hidden rounded-2xl" style={{ aspectRatio: `1 / ${post.images[0].ratio}` }}>
+              {post.images.slice(0, 2).map((im, i) => (
+                <div key={i} className="relative">
+                  <Picture fill img={im} w={300} className="h-full" alt={i ? 'После' : 'До'} />
+                  <span className="glass-strong absolute bottom-2 left-2 rounded-full px-2 py-0.5 text-[11px] font-bold">
+                    {i ? 'После' : 'До'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <Picture img={post.images[0]} w={500} className="rounded-2xl" alt={post.title} />
+          )}
+          {post.type !== 'beforeafter' && post.images.length > 1 && (
+            <span
+              className="glass-strong pointer-events-none absolute right-2 bottom-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold"
+              title={`${post.images.length} картинок`}
+            >
+              <Images size={12} strokeWidth={2.4} /> {post.images.length}
+            </span>
+          )}
           <span className="pointer-events-none absolute inset-0 rounded-2xl bg-black/0 transition-colors duration-200 group-hover:bg-black/15" />
         </Link>
         <TopicBadge topic={post.topic} className="pointer-events-none absolute top-2 left-2 max-w-[calc(100%-56px)]" />

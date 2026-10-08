@@ -1,27 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import {
-  ArrowLeft,
-  BadgeCheck,
-  Check,
-  Bookmark,
-  ChefHat,
-  CircleCheck,
-  Clock,
-  Gauge,
-  Heart,
-  Link2,
-  SearchX,
-  ThumbsDown,
-  ThumbsUp,
-  Users,
-} from 'lucide-react'
+import { ArrowLeft, BadgeCheck, Bookmark, ChefHat, CircleCheck, Heart, Link2, SearchX, ThumbsDown, ThumbsUp } from 'lucide-react'
+import type { Try } from '../data/types'
 import { topicLabel } from '../data/types'
 import { useStore } from '../store'
 import { useUi } from '../ui-context'
 import { cx, num, plural, timeAgo } from '../lib'
 import { Masonry } from '../components/Masonry'
+import { Gallery } from '../components/Gallery'
 import { Avatar, Button, Empty, IconButton, Picture } from '../components/ui'
+
+/** Сколько отзывов видно сразу; остальные — по кнопке */
+const FIRST_TRIES = 3
 
 export function PostPage() {
   const { id = '' } = useParams()
@@ -29,13 +19,12 @@ export function PostPage() {
   const nav = useNavigate()
   const { post, user, triesOf, toggleFollow, follows, likes, toggleLike, savedIn, posts, me } = useStore()
   const { openSave, openTried, toast } = useUi()
-  const [checked, setChecked] = useState<number[]>([])
+  const [allTries, setAllTries] = useState(false)
   const triesRef = useRef<HTMLElement>(null)
   const p = post(id)
 
   useEffect(() => {
     window.scrollTo(0, 0)
-    setChecked([])
   }, [id])
   useEffect(() => {
     if (params.get('tab') === 'tries') triesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -52,6 +41,7 @@ export function PostPage() {
   const saved = savedIn(p.id)
   const isMine = p.authorId === me.id
   const more = posts.filter((x) => x.id !== p.id && x.topic === p.topic).slice(0, 12)
+  const shown = allTries || params.get('tab') === 'tries' ? tries : tries.slice(0, FIRST_TRIES)
 
   const share = async () => {
     const url = window.location.href
@@ -65,6 +55,13 @@ export function PostPage() {
       /* пользователь отменил */
     }
   }
+
+  const likeButton = (cls: string) => (
+    <button type="button" onClick={() => toggleLike(p.id)} aria-pressed={liked} aria-label="Нравится" className={cls}>
+      <Heart size={20} className={cx(liked && 'fill-rose-500 text-rose-500')} />
+      <span className="max-md:sr-only">{num(p.likes)}</span>
+    </button>
+  )
 
   return (
     <>
@@ -82,25 +79,11 @@ export function PostPage() {
         </div>
 
         <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:gap-8">
-          {/* картинки */}
+          {/* картинки — в них вся идея */}
           <div className="md:sticky md:top-20 md:self-start">
-            {p.type === 'beforeafter' && p.images[1] ? (
-              <div className="grid grid-cols-2 gap-2">
-                {p.images.slice(0, 2).map((im, i) => (
-                  <figure key={i} className="relative">
-                    <Picture img={im} w={600} className="rounded-2xl" alt={`${p.title} — ${i ? 'после' : 'до'}`} />
-                    <figcaption className="glass-strong absolute bottom-2 left-2 rounded-full px-3 py-1 text-xs font-bold">
-                      {i ? 'После' : 'До'}
-                    </figcaption>
-                  </figure>
-                ))}
-              </div>
-            ) : (
-              <Picture img={p.images[0]} w={900} className="rounded-2xl" alt={p.title} />
-            )}
+            <Gallery key={p.id} post={p} />
           </div>
 
-          {/* текст */}
           <div className="min-w-0">
             <div className="mb-3 flex flex-wrap gap-2">
               <span
@@ -117,7 +100,6 @@ export function PostPage() {
               </Link>
             </div>
             <h1 className="text-2xl leading-8 font-bold md:text-[28px] md:leading-9">{p.title}</h1>
-            {p.text && <p className="mt-3 text-[15px] leading-relaxed">{p.text}</p>}
 
             {/* автор */}
             <div className="card mt-4 flex items-center gap-3 p-3">
@@ -139,99 +121,13 @@ export function PostPage() {
               )}
             </div>
 
-            {/* рецепт */}
-            {p.recipe && (
-              <>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {[
-                    { icon: Clock, t: p.recipe.time },
-                    { icon: Users, t: `${p.recipe.servings} ${plural(p.recipe.servings, 'порция', 'порции', 'порций')}` },
-                    { icon: Gauge, t: p.recipe.difficulty },
-                  ].map(({ icon: I, t }) => (
-                    <span key={t} className="card inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold">
-                      <I size={16} /> {t}
-                    </span>
-                  ))}
-                </div>
-                <h2 className="section-label mt-6 mb-2">Ингредиенты</h2>
-                <ul className="card divide-y divide-[var(--border)]">
-                  {p.recipe.ingredients.map((ing, i) => {
-                    const on = checked.includes(i)
-                    return (
-                      <li key={i}>
-                        <label className="flex cursor-pointer items-center gap-3 px-3 py-2.5 text-sm">
-                          <input
-                            type="checkbox"
-                            checked={on}
-                            onChange={() => setChecked((c) => (on ? c.filter((x) => x !== i) : [...c, i]))}
-                            className="peer sr-only"
-                          />
-                          <span
-                            aria-hidden
-                            className={cx(
-                              'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent',
-                              on ? 'grad border-transparent' : 'border-line-strong bg-surface',
-                            )}
-                          >
-                            {on && <Check size={13} strokeWidth={3.2} />}
-                          </span>
-                          <span className={cx(on && 'line-through opacity-60')}>{ing}</span>
-                        </label>
-                      </li>
-                    )
-                  })}
-                </ul>
-              </>
-            )}
-
-            {/* шаги */}
-            {!!(p.recipe?.steps.length || p.steps?.length) && (
-              <>
-                <h2 className="section-label mt-6 mb-2">Шаги</h2>
-                <ol className="flex flex-col gap-2">
-                  {(p.recipe ? p.recipe.steps.map((t) => ({ text: t, img: undefined })) : p.steps!).map((s, i) => (
-                    <li key={i} className="card flex gap-3 p-3">
-                      <span className="grad inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-bold">
-                        {i + 1}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="pt-0.5 text-sm leading-relaxed">{s.text}</p>
-                        {s.img && <Picture img={s.img} w={400} className="mt-2 w-40 rounded-xl" />}
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-              </>
-            )}
-
-            {p.tags.length > 0 && (
-              <div className="mt-5 flex flex-wrap gap-2">
-                {p.tags.map((t) => (
-                  <Link
-                    key={t}
-                    to={`/search?q=${encodeURIComponent(t)}`}
-                    className="press rounded-full border border-line bg-surface px-3 py-1.5 text-xs font-semibold hover:bg-active"
-                  >
-                    #{t}
-                  </Link>
-                ))}
-              </div>
-            )}
-
             <div className="mt-5 hidden items-center gap-2 md:flex">
-              <Button className="flex-1" icon={CircleCheck} onClick={() => openTried(p.id)}>
-                Я попробовал
-              </Button>
-              <button
-                type="button"
-                onClick={() => toggleLike(p.id)}
-                aria-pressed={liked}
-                aria-label="Нравится"
-                className="press card inline-flex h-12 items-center gap-2 px-4 text-sm font-semibold hover:bg-active"
-              >
-                <Heart size={20} className={cx(liked && 'fill-rose-500 text-rose-500')} />
-                {num(p.likes + (liked ? 1 : 0))}
-              </button>
+              {!isMine && (
+                <Button className="flex-1" icon={CircleCheck} onClick={() => openTried(p.id)}>
+                  Я попробовал
+                </Button>
+              )}
+              {likeButton('press card inline-flex h-12 items-center gap-2 px-4 text-sm font-semibold hover:bg-active')}
             </div>
             {saved.length > 0 && (
               <p className="mt-3 text-xs">
@@ -255,7 +151,11 @@ export function PostPage() {
               {tries.length === 0 ? (
                 <div className="card flex items-center gap-3 p-4">
                   <ChefHat size={28} strokeWidth={1.6} />
-                  <p className="text-sm leading-relaxed">Ещё никто не отметился. Попробуйте первым и расскажите, как вышло.</p>
+                  <p className="text-sm leading-relaxed">
+                    {isMine
+                      ? 'Здесь появятся отзывы тех, кто повторит вашу идею.'
+                      : 'Ещё никто не отметился. Попробуйте первым и расскажите, как вышло.'}
+                  </p>
                 </div>
               ) : (
                 <>
@@ -286,36 +186,15 @@ export function PostPage() {
                   )}
 
                   <ul className="mt-3 flex flex-col gap-2">
-                    {tries.map((t) => {
-                      const u = user(t.userId)
-                      return (
-                        <li key={t.id} className="card flex gap-3 p-3">
-                          <Link to={`/u/${u.id}`} className="h-fit rounded-full">
-                            <Avatar user={u} size={32} />
-                          </Link>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                              <Link to={`/u/${u.id}`} className="text-sm font-semibold hover:underline">
-                                {u.id === me.id ? 'Вы' : u.name}
-                              </Link>
-                              <span
-                                className={cx(
-                                  'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold',
-                                  t.ok ? 'bg-accent/10 text-accent' : 'bg-rose-500/10 text-rose-500',
-                                )}
-                              >
-                                {t.ok ? <ThumbsUp size={11} strokeWidth={2.6} /> : <ThumbsDown size={11} strokeWidth={2.6} />}
-                                {t.ok ? 'Получилось' : 'Не получилось'}
-                              </span>
-                              <span className="text-[11px]">{timeAgo(t.createdAt)}</span>
-                            </div>
-                            {t.text && <p className="mt-1 text-sm leading-relaxed">{t.text}</p>}
-                          </div>
-                          {t.img && <Picture img={{ ...t.img, ratio: 1 }} w={200} className="h-16 w-16 shrink-0 rounded-xl" />}
-                        </li>
-                      )
-                    })}
+                    {shown.map((t) => (
+                      <TryItem key={t.id} t={t} authorId={p.authorId} />
+                    ))}
                   </ul>
+                  {shown.length < tries.length && (
+                    <Button kind="neutral" size="sm" className="mt-3 w-full" onClick={() => setAllTries(true)}>
+                      Показать все отзывы · {tries.length}
+                    </Button>
+                  )}
                 </>
               )}
             </section>
@@ -325,21 +204,15 @@ export function PostPage() {
 
       {/* телефон: главное действие всегда под пальцем */}
       <div
-        className="fixed inset-x-2 z-30 flex gap-2 md:hidden"
+        className="fixed inset-x-2 z-30 flex justify-end gap-2 md:hidden"
         style={{ bottom: 'calc(max(env(safe-area-inset-bottom), 6px) + 54px + 8px)' }}
       >
-        <Button className="flex-1 shadow-lg" icon={CircleCheck} onClick={() => openTried(p.id)}>
-          Я попробовал
-        </Button>
-        <button
-          type="button"
-          onClick={() => toggleLike(p.id)}
-          aria-pressed={liked}
-          aria-label="Нравится"
-          className="press glass-strong inline-flex h-12 w-12 items-center justify-center rounded-2xl shadow-lg"
-        >
-          <Heart size={20} className={cx(liked && 'fill-rose-500 text-rose-500')} />
-        </button>
+        {!isMine && (
+          <Button className="flex-1 shadow-lg" icon={CircleCheck} onClick={() => openTried(p.id)}>
+            Я попробовал
+          </Button>
+        )}
+        {likeButton('press glass-strong inline-flex h-12 w-12 items-center justify-center rounded-2xl shadow-lg')}
       </div>
       <div className="h-16 md:hidden" aria-hidden />
 
@@ -352,5 +225,136 @@ export function PostPage() {
         </section>
       )}
     </>
+  )
+}
+
+/** Отзыв «Я попробовал» и ответы на него. Отвечать может любой, у автора поста — метка «автор» */
+function TryItem({ t, authorId }: { t: Try; authorId: string }) {
+  const { user, me, repliesOf, addReply, authed, setLoginOpen } = useStore()
+  const replies = repliesOf(t.id)
+  const [open, setOpen] = useState(false)
+  const [writing, setWriting] = useState(false)
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const u = user(t.userId)
+
+  const send = async () => {
+    const v = text.trim()
+    if (!v) return
+    setBusy(true)
+    setErr('')
+    try {
+      await addReply(t.id, v)
+      setText('')
+      setWriting(false)
+      setOpen(true)
+    } catch {
+      setErr('Не получилось отправить. Попробуйте ещё раз.')
+    }
+    setBusy(false)
+  }
+
+  return (
+    <li className="card p-3">
+      <div className="flex gap-3">
+        <Link to={`/u/${u.id}`} className="h-fit rounded-full">
+          <Avatar user={u} size={32} />
+        </Link>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <Link to={`/u/${u.id}`} className="text-sm font-semibold hover:underline">
+              {u.id === me.id ? 'Вы' : u.name}
+            </Link>
+            <span
+              className={cx(
+                'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold',
+                t.ok ? 'bg-accent/10 text-accent' : 'bg-rose-500/10 text-rose-500',
+              )}
+            >
+              {t.ok ? <ThumbsUp size={11} strokeWidth={2.6} /> : <ThumbsDown size={11} strokeWidth={2.6} />}
+              {t.ok ? 'Получилось' : 'Не получилось'}
+            </span>
+            <span className="text-[11px]">{timeAgo(t.createdAt)}</span>
+          </div>
+          {t.text && <p className="mt-1 text-sm leading-relaxed">{t.text}</p>}
+          <div className="mt-1.5 flex gap-3 text-xs font-semibold">
+            <button
+              type="button"
+              className="press text-accent hover:underline"
+              onClick={() => (authed ? setWriting((w) => !w) : setLoginOpen(true))}
+            >
+              Ответить
+            </button>
+            {replies.length > 0 && (
+              <button type="button" className="press hover:underline" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+                {open ? 'Скрыть ответы' : `${replies.length} ${plural(replies.length, 'ответ', 'ответа', 'ответов')}`}
+              </button>
+            )}
+          </div>
+        </div>
+        {t.img && <Picture img={{ ...t.img, ratio: 1 }} w={200} className="h-16 w-16 shrink-0 rounded-xl" />}
+      </div>
+
+      {open && replies.length > 0 && (
+        <ul className="mt-3 ml-11 flex flex-col gap-3 border-l-2 border-line pl-3">
+          {replies.map((r) => {
+            const ru = user(r.userId)
+            return (
+              <li key={r.id} className="flex gap-2">
+                <Link to={`/u/${ru.id}`} className="h-fit rounded-full">
+                  <Avatar user={ru} size={24} />
+                </Link>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-x-2">
+                    <Link to={`/u/${ru.id}`} className="text-xs font-semibold hover:underline">
+                      {ru.id === me.id ? 'Вы' : ru.name}
+                    </Link>
+                    {r.userId === authorId && <span className="rounded-full border chip-on px-1.5 text-[10px] font-bold">автор</span>}
+                    <span className="text-[11px]">{timeAgo(r.createdAt)}</span>
+                  </div>
+                  <p className="text-sm leading-relaxed">{r.text}</p>
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+
+      {writing && (
+        <form
+          className="mt-3 ml-11 flex flex-col gap-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            send()
+          }}
+        >
+          <textarea
+            autoFocus
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={2}
+            maxLength={500}
+            placeholder={`Ответ для ${u.id === me.id ? 'себя' : u.name}`}
+            aria-label="Ответ"
+            className="card w-full resize-none px-3 py-2 text-sm outline-none placeholder:text-muted"
+          />
+          {err && (
+            <p className="text-xs font-semibold text-rose-500" role="alert">
+              {err}
+            </p>
+          )}
+          <div className="flex items-center gap-2">
+            <span className="flex-1 text-[11px]">{text.length} / 500</span>
+            <Button type="button" kind="neutral" size="sm" onClick={() => setWriting(false)}>
+              Отмена
+            </Button>
+            <Button type="submit" size="sm" disabled={busy || !text.trim()}>
+              {busy ? 'Отправляем…' : 'Отправить'}
+            </Button>
+          </div>
+        </form>
+      )}
+    </li>
   )
 }

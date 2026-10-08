@@ -15,12 +15,7 @@ export function Search() {
   const { posts, users, user, me } = useStore()
 
   const found = q
-    ? posts.filter((p) =>
-        [p.title, p.text, topicLabel(p.topic), ...p.tags, user(p.authorId).name, ...(p.recipe?.ingredients ?? [])]
-          .join(' ')
-          .toLowerCase()
-          .includes(q),
-      )
+    ? posts.filter((p) => [p.title, topicLabel(p.topic), ...p.tags, user(p.authorId).name].join(' ').toLowerCase().includes(q))
     : []
   const people = q ? users.filter((u) => u.id !== me.id && (u.name + ' ' + u.handle).toLowerCase().includes(q)) : []
 

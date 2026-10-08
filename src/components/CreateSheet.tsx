@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ImagePlus, Plus, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ImagePlus, Plus, X } from 'lucide-react'
 import type { Img, Topic } from '../data/types'
 import { TOPICS } from '../data/types'
 import { useStore } from '../store'
@@ -11,42 +11,46 @@ import { Button, Chip } from './ui'
 
 const field = 'card w-full px-4 py-3 text-base outline-none placeholder:text-muted'
 const OWN = '__own'
+const MAX = 10
 
-/** Заголовок — первая строка подписи; длинную обрезаем по слову */
-function splitCaption(caption: string) {
-  const [first, ...rest] = caption.trim().split('\n')
-  const line = first.trim()
-  if (line.length <= 90) return { title: line, text: rest.join('\n').trim() }
-  const cut = line.slice(0, 90)
-  return { title: cut.slice(0, cut.lastIndexOf(' ') > 40 ? cut.lastIndexOf(' ') : 90) + '…', text: caption.trim() }
-}
-
-/** Создание поста: фото, подпись, категория — DESIGN_WEB 3.9 */
+/** Создание поста: картинки (вся идея на них), название, категория — DESIGN_WEB 3.9 */
 export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { addPost } = useStore()
   const { toast } = useUi()
   const nav = useNavigate()
-  const [image, setImage] = useState<Img>()
-  const [caption, setCaption] = useState('')
+  const [images, setImages] = useState<Img[]>([])
+  const [beforeAfter, setBeforeAfter] = useState(false)
+  const [title, setTitle] = useState('')
   const [topic, setTopic] = useState<Topic>('')
   const [own, setOwn] = useState('')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  const close = () => {
-    if (busy) return
-    setImage(undefined)
-    setCaption('')
+  const reset = () => {
+    setImages([])
+    setBeforeAfter(false)
+    setTitle('')
     setTopic('')
     setOwn('')
     setErr('')
+  }
+  const close = () => {
+    if (busy) return
+    reset()
     onClose()
   }
 
+  const move = (i: number, d: -1 | 1) =>
+    setImages((a) => {
+      const b = [...a]
+      ;[b[i], b[i + d]] = [b[i + d], b[i]]
+      return b
+    })
+
   const publish = async () => {
-    if (!image) return setErr('Добавьте фото')
-    if (!caption.trim()) return setErr('Напишите подпись')
+    if (!images.length) return setErr('Добавьте хотя бы одну картинку')
+    if (!title.trim()) return setErr('Напишите название')
     let t = topic
     if (topic === OWN) {
       const name = own.trim().replace(/\s+/g, ' ')
@@ -57,12 +61,14 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
     if (!t) return setErr('Выберите категорию')
     setBusy(true)
     try {
-      const id = await addPost({ topic: t, ...splitCaption(caption), images: [image] })
+      const id = await addPost({
+        type: beforeAfter && images.length === 2 ? 'beforeafter' : 'photo',
+        topic: t,
+        title: title.trim().replace(/\s+/g, ' '),
+        images,
+      })
       setBusy(false)
-      setImage(undefined)
-      setCaption('')
-      setTopic('')
-      setOwn('')
+      reset()
       onClose()
       toast('Опубликовано')
       nav(`/p/${id}`)
@@ -81,52 +87,110 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
           publish()
         }}
       >
-        {image ? (
-          <div className="relative mx-auto w-full max-w-sm">
-            <img src={image.src} alt="Фото" className="max-h-[60vh] w-full rounded-2xl object-cover" />
-            <button
-              type="button"
-              aria-label="Убрать фото"
-              onClick={() => setImage(undefined)}
-              className="press glass-strong absolute top-2 right-2 inline-flex h-8 w-8 items-center justify-center rounded-full"
-            >
-              <X size={16} strokeWidth={2.4} />
-            </button>
-          </div>
-        ) : (
+        <p className="text-sm leading-relaxed">
+          Вся идея — на картинках: шаги, состав, подсказки. Без людей в кадре (руки можно). До {MAX} картинок, их будут листать.
+        </p>
+        {images.length === 0 ? (
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
             className="press flex aspect-[4/3] w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-line-strong text-sm font-semibold hover:bg-active"
           >
             <ImagePlus size={32} strokeWidth={1.8} />
-            Загрузить фото
-            <span className="text-xs font-normal text-muted">Сама идея: еда, вещи, интерьер, растения — без людей</span>
+            Загрузить картинки
+            <span className="text-xs font-normal text-muted">Можно выбрать несколько сразу</span>
           </button>
+        ) : (
+          <div className="grid grid-cols-3 gap-2">
+            {images.map((im, i) => (
+              <div key={i} className="relative">
+                <img src={im.src} alt={`Картинка ${i + 1}`} className="aspect-[3/4] w-full rounded-xl bg-elevated object-contain" />
+                <span className="glass-strong absolute top-1.5 left-1.5 rounded-full px-2 text-[11px] font-bold">
+                  {beforeAfter && images.length === 2 ? (i ? 'После' : 'До') : i + 1}
+                </span>
+                <button
+                  type="button"
+                  aria-label={`Убрать картинку ${i + 1}`}
+                  onClick={() => setImages((a) => a.filter((_, j) => j !== i))}
+                  className="press glass-strong absolute top-1.5 right-1.5 inline-flex h-7 w-7 items-center justify-center rounded-full"
+                >
+                  <X size={14} strokeWidth={2.4} />
+                </button>
+                <div className="absolute inset-x-1.5 bottom-1.5 flex justify-between">
+                  {i > 0 ? (
+                    <button
+                      type="button"
+                      aria-label="Переставить левее"
+                      onClick={() => move(i, -1)}
+                      className="press glass-strong inline-flex h-7 w-7 items-center justify-center rounded-full"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                  ) : (
+                    <span />
+                  )}
+                  {i < images.length - 1 && (
+                    <button
+                      type="button"
+                      aria-label="Переставить правее"
+                      onClick={() => move(i, 1)}
+                      className="press glass-strong inline-flex h-7 w-7 items-center justify-center rounded-full"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+            {images.length < MAX && (
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                className="press flex aspect-[3/4] flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-line-strong text-xs font-semibold hover:bg-active"
+              >
+                <Plus size={22} />
+                Ещё
+              </button>
+            )}
+          </div>
         )}
         <input
           ref={fileRef}
           type="file"
           accept="image/*"
+          multiple
           hidden
           onChange={async (e) => {
-            const f = e.target.files?.[0]
-            if (f) {
-              setImage(await fileToImg(f))
-              setErr('')
-            }
+            const files = [...(e.target.files ?? [])].slice(0, MAX - images.length)
             e.target.value = ''
+            if (!files.length) return
+            const added = await Promise.all(files.map((f) => fileToImg(f, 1400)))
+            setImages((a) => [...a, ...added].slice(0, MAX))
+            setErr('')
           }}
         />
 
-        <textarea
-          value={caption}
-          onChange={(e) => setCaption(e.target.value)}
-          rows={4}
-          maxLength={2000}
-          placeholder={'Подпись\nПервая строка станет заголовком'}
-          aria-label="Подпись"
-          className={`${field} resize-y`}
+        {images.length === 2 && (
+          <label className="card flex cursor-pointer items-center gap-3 px-4 py-3">
+            <input
+              type="checkbox"
+              checked={beforeAfter}
+              onChange={(e) => setBeforeAfter(e.target.checked)}
+              className="h-5 w-5 accent-accent"
+            />
+            <span className="text-sm">
+              <b>До и после</b> — показать две картинки рядом
+            </span>
+          </label>
+        )}
+
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          maxLength={80}
+          placeholder="Название, например «Сырники без муки»"
+          aria-label="Название"
+          className={field}
         />
 
         <div>

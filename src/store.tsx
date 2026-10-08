@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import type { Folder, Img, Post, Recipe, Step, Topic, Try, User } from './data/types'
+import type { Folder, Img, Post, PostType, Reply, Topic, Try, User } from './data/types'
 import { supabase } from './supabase'
 
 /**
@@ -11,9 +11,9 @@ export type ThemeMode = 'system' | 'light' | 'dark'
 
 /** Новый пост: что заполняет автор */
 export interface NewPost {
+  type: PostType
   topic: Topic
   title: string
-  text: string
   images: Img[]
 }
 
@@ -30,6 +30,7 @@ interface Store {
   users: User[]
   posts: Post[]
   tries: Try[]
+  replies: Reply[]
   folders: Folder[]
   follows: string[]
   likes: string[]
@@ -37,10 +38,13 @@ interface Store {
   user: (id: string) => User
   post: (id: string) => Post | undefined
   triesOf: (postId: string) => Try[]
+  repliesOf: (tryId: string) => Reply[]
   toggleFollow: (userId: string) => void
   toggleLike: (postId: string) => void
   addPost: (p: NewPost) => Promise<string>
   addTry: (postId: string, ok: boolean, text?: string, img?: Img) => Promise<void>
+  /** ответ на отзыв; гостю — окно входа */
+  addReply: (tryId: string, text: string) => Promise<void>
   saveTo: (folderId: string, postId: string) => void
   unsaveFrom: (folderId: string, postId: string) => void
   createFolder: (name: string, postId?: string) => string
@@ -77,14 +81,12 @@ interface ProfileRow {
 interface PostRow {
   id: string
   author_id: string
-  type: Post['type']
+  type: PostType
   topic: string
   title: string
-  text: string
   images: Img[]
-  recipe: Recipe | null
-  steps: Step[] | null
   tags: string[]
+  ai_tags: string[]
   likes_count: number
   created_at: string
 }
@@ -109,18 +111,30 @@ const toUser = (r: ProfileRow): User => ({
 })
 const toPost = (r: PostRow): Post => ({
   id: r.id,
-  type: r.type,
+  type: r.type === 'beforeafter' ? 'beforeafter' : 'photo',
   topic: r.topic,
   title: r.title,
-  text: r.text,
   authorId: r.author_id,
   createdAt: Date.parse(r.created_at),
   images: r.images,
-  recipe: r.recipe ?? undefined,
-  steps: r.steps ?? undefined,
   likes: r.likes_count,
-  tags: r.tags,
+  tags: [...r.tags, ...(r.ai_tags ?? [])],
 })
+interface ReplyRow {
+  id: string
+  try_id: string
+  user_id: string
+  text: string
+  created_at: string
+}
+const toReply = (r: ReplyRow): Reply => ({
+  id: r.id,
+  tryId: r.try_id,
+  userId: r.user_id,
+  text: r.text,
+  createdAt: Date.parse(r.created_at),
+})
+
 const toTry = (r: TryRow): Try => ({
   id: r.id,
   postId: r.post_id,
@@ -157,6 +171,7 @@ export function StoreProvider({ children, initialNotice }: { children: ReactNode
   const [users, setUsers] = useState<User[]>([])
   const [posts, setPosts] = useState<Post[]>([])
   const [tries, setTries] = useState<Try[]>([])
+  const [replies, setReplies] = useState<Reply[]>([])
   const [folders, setFolders] = useState<Folder[]>([])
   const [follows, setFollows] = useState<string[]>([])
   const [likes, setLikes] = useState<string[]>([])
@@ -182,12 +197,15 @@ export function StoreProvider({ children, initialNotice }: { children: ReactNode
       supabase.from('profiles').select('*'),
       supabase.from('posts').select('*').order('created_at', { ascending: false }).limit(1000),
       supabase.from('tries').select('*').order('created_at', { ascending: false }).limit(5000),
+      supabase.from('try_replies').select('*').order('created_at').limit(10000),
     ])
-      .then(([u, p, t]) => {
+      .then(([u, p, t, r]) => {
         if (!live) return
         setUsers((check(u).data as ProfileRow[]).map(toUser))
         setPosts((check(p).data as PostRow[]).map(toPost))
         setTries((check(t).data as TryRow[]).map(toTry))
+        // ответов может не быть, пока в базе не запущено обновление 002 — сайт работает и без них
+        setReplies(r.error ? [] : (r.data as ReplyRow[]).map(toReply))
         setFailed(false)
         setReady(true)
       })
@@ -259,6 +277,7 @@ export function StoreProvider({ children, initialNotice }: { children: ReactNode
     (postId: string) => tries.filter((t) => t.postId === postId).sort((a, b) => b.createdAt - a.createdAt),
     [tries],
   )
+  const repliesOf = useCallback((tryId: string) => replies.filter((r) => r.tryId === tryId), [replies])
 
   /** Сохранение в базе; при ошибке — сообщение и свежие данные с сервера */
   const save = (req: PromiseLike<{ error: unknown }>) => {
@@ -297,6 +316,7 @@ export function StoreProvider({ children, initialNotice }: { children: ReactNode
     users,
     posts,
     tries,
+    replies,
     folders,
     follows,
     likes,
@@ -304,6 +324,7 @@ export function StoreProvider({ children, initialNotice }: { children: ReactNode
     user,
     post,
     triesOf,
+    repliesOf,
     toggleFollow: (id) => {
       if (needLogin()) return
       const on = follows.includes(id)
@@ -331,7 +352,7 @@ export function StoreProvider({ children, initialNotice }: { children: ReactNode
       const images = await Promise.all(data.images.map(upload))
       const res = await supabase
         .from('posts')
-        .insert({ author_id: uid, type: 'photo', topic: data.topic, title: data.title, text: data.text, images })
+        .insert({ author_id: uid, type: data.type, topic: data.topic, title: data.title, images })
         .select()
         .single()
       const p = toPost(check(res).data as PostRow)
@@ -347,6 +368,15 @@ export function StoreProvider({ children, initialNotice }: { children: ReactNode
         .single()
       const t = toTry(check(res).data as TryRow)
       setTries((ts) => [t, ...ts])
+    },
+    addReply: async (tryId, text) => {
+      if (!uid) {
+        setLoginOpen(true)
+        throw new Error('not signed in')
+      }
+      const res = await supabase.from('try_replies').insert({ try_id: tryId, user_id: uid, text }).select().single()
+      const r = toReply(check(res).data as ReplyRow)
+      setReplies((rs) => [...rs, r])
     },
     saveTo: (fid, pid) => {
       if (needLogin()) return

@@ -32,7 +32,7 @@ export function timeAgo(ts: number) {
   return new Date(ts).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
 }
 
-/** Чтение выбранного файла в data:URL с уменьшением до maxW, чтобы влезало в хранилище браузера */
+/** Выбранный файл → data:URL, уменьшенный до maxW (текст на картинке остаётся читаемым) */
 export function fileToImg(file: File, maxW = 900): Promise<Img> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -46,7 +46,7 @@ export function fileToImg(file: File, maxW = 900): Promise<Img> {
         c.width = Math.round(image.width * k)
         c.height = Math.round(image.height * k)
         c.getContext('2d')!.drawImage(image, 0, 0, c.width, c.height)
-        resolve({ src: c.toDataURL('image/jpeg', 0.8), ratio: image.height / image.width })
+        resolve({ src: c.toDataURL('image/jpeg', 0.85), ratio: image.height / image.width })
       }
       image.src = reader.result as string
     }

@@ -9,6 +9,7 @@ export function Picture({
   className,
   alt = '',
   fill,
+  contain,
 }: {
   img: Img
   /** нужная ширина — пригодится, когда хранилище начнёт отдавать уменьшенные копии */
@@ -16,6 +17,8 @@ export function Picture({
   className?: string
   alt?: string
   fill?: boolean
+  /** вписать целиком, без обрезки (картинки с текстом) */
+  contain?: boolean
 }) {
   const [loaded, setLoaded] = useState(false)
   return (
@@ -26,7 +29,11 @@ export function Picture({
         loading="lazy"
         decoding="async"
         onLoad={() => setLoaded(true)}
-        className={cx('absolute inset-0 h-full w-full object-cover transition-opacity duration-300', loaded ? 'opacity-100' : 'opacity-0')}
+        className={cx(
+          'absolute inset-0 h-full w-full transition-opacity duration-300',
+          contain ? 'object-contain' : 'object-cover',
+          loaded ? 'opacity-100' : 'opacity-0',
+        )}
       />
     </div>
   )

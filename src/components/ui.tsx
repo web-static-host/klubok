@@ -1,36 +1,31 @@
 import { useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
-import { BookOpen, ChefHat, Image as ImageIcon, Lightbulb, SplitSquareHorizontal, type LucideIcon } from 'lucide-react'
-import type { Img, PostType, User } from '../data/types'
-import { TYPE_META } from '../data/types'
-import { cx, imgFallback, imgSrc } from '../lib'
+import { type LucideIcon } from 'lucide-react'
+import type { Img, Topic, User } from '../data/types'
+import { topicLabel } from '../data/types'
+import { cx, imgSrc } from '../lib'
 
 export function Picture({
   img,
-  w = 600,
   className,
   alt = '',
   fill,
 }: {
   img: Img
+  /** нужная ширина — пригодится, когда хранилище начнёт отдавать уменьшенные копии */
   w?: number
   className?: string
   alt?: string
   fill?: boolean
 }) {
-  const [src, setSrc] = useState(() => imgSrc(img, w))
   const [loaded, setLoaded] = useState(false)
   return (
     <div className={cx('relative overflow-hidden bg-elevated', className)} style={fill ? undefined : { aspectRatio: `1 / ${img.ratio}` }}>
       <img
-        src={src}
+        src={imgSrc(img)}
         alt={alt}
         loading="lazy"
         decoding="async"
         onLoad={() => setLoaded(true)}
-        onError={() => {
-          const fb = imgFallback(img, w)
-          if (src !== fb) setSrc(fb)
-        }}
         className={cx('absolute inset-0 h-full w-full object-cover transition-opacity duration-300', loaded ? 'opacity-100' : 'opacity-0')}
       />
     </div>
@@ -115,41 +110,13 @@ export function IconButton({
   )
 }
 
-const TYPE_ICON: Record<PostType, LucideIcon> = {
-  photo: ImageIcon,
-  recipe: ChefHat,
-  hack: Lightbulb,
-  beforeafter: SplitSquareHorizontal,
-}
-export const typeIcon = (t: PostType) => TYPE_ICON[t] ?? BookOpen
-
-export function TypeBadge({ type, className }: { type: PostType; className?: string }) {
-  const Icon = typeIcon(type)
+/** Плашка категории поверх картинки и в карточках */
+export function TopicBadge({ topic, className }: { topic: Topic; className?: string }) {
   return (
     <span
-      className={cx(
-        'glass-strong inline-flex items-center gap-1.5 rounded-full py-1 pr-2.5 pl-1 text-xs font-semibold text-ink',
-        className,
-      )}
+      className={cx('glass-strong inline-flex max-w-full items-center rounded-full px-2.5 py-1 text-xs font-semibold text-ink', className)}
     >
-      <span
-        className="inline-flex h-5 w-5 items-center justify-center rounded-full text-white"
-        style={{ backgroundImage: `linear-gradient(135deg, ${TYPE_META[type].colors[0]}, ${TYPE_META[type].colors[1]})` }}
-      >
-        <Icon size={11} strokeWidth={2.4} />
-      </span>
-      {TYPE_META[type].label}
-    </span>
-  )
-}
-
-export function IconTile({ icon: Icon, colors, size = 40 }: { icon: LucideIcon; colors: [string, string]; size?: number }) {
-  return (
-    <span
-      className="inline-flex shrink-0 items-center justify-center rounded-2xl text-white"
-      style={{ width: size, height: size, backgroundImage: `linear-gradient(135deg, ${colors[0]}, ${colors[1]})` }}
-    >
-      <Icon size={size * 0.5} strokeWidth={2.2} />
+      <span className="truncate">{topicLabel(topic)}</span>
     </span>
   )
 }

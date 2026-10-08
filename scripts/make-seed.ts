@@ -2,8 +2,15 @@
  * Собирает supabase/seed.sql из тестовых данных src/data/mock.ts.
  * Запуск: node --experimental-strip-types scripts/make-seed.ts
  */
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
+import type { Img, Post } from '../src/data/types.ts'
 import { posts, tries, users, ME } from '../src/data/mock.ts'
+
+/** Тестовые картинки лежат в хранилище Supabase: images/demo/<номер>.jpg (см. supabase/demo-images.json) */
+const env = readFileSync(new URL('../.env', import.meta.url), 'utf8')
+const base = env.match(/^VITE_SUPABASE_URL=(.+)$/m)![1].trim()
+const pic = (img: Img): Img => (img.seed ? { src: `${base}/storage/v1/object/public/images/demo/${img.seed}.jpg`, ratio: img.ratio } : img)
+const withPics = (p: Post): Post => ({ ...p, images: p.images.map(pic), steps: p.steps?.map((s) => (s.img ? { ...s, img: pic(s.img) } : s)) })
 
 const now = Date.now()
 
@@ -19,6 +26,9 @@ const ago = (ts: number) => `now() - interval '${Math.round((now - ts) / 60000)}
 const out: string[] = [
   '-- Клубок: тестовое наполнение. Файл собран скриптом scripts/make-seed.ts — руками не править.',
   '-- Запуск: после schema.sql, в SQL Editor → Run. Повторный запуск заменяет тестовые данные.',
+  '',
+  '-- закрываем временную загрузку тестовых картинок (если была открыта)',
+  'drop policy if exists "временно: загрузка демо-картинок" on storage.objects;',
   '',
   'delete from profiles where is_demo;',
   '',
@@ -39,7 +49,7 @@ out.push(
     .map(
       (p) =>
         `  (${q(postId(p.id))}, ${q(userId(p.authorId))}, ${q(p.type)}, ${q(p.topic)}, ${q(p.title)}, ${q(p.text)}, ` +
-        `${json(p.images)}, ${json(p.recipe)}, ${json(p.steps)}, ${arr(p.tags)}, ${p.likes}, ${ago(p.createdAt)})`,
+        `${json(withPics(p).images)}, ${json(p.recipe)}, ${json(withPics(p).steps)}, ${arr(p.tags)}, ${p.likes}, ${ago(p.createdAt)})`,
     )
     .join(',\n') + ';',
   '',
@@ -49,7 +59,7 @@ const demoTries = tries.filter((t) => t.userId !== ME)
 out.push('insert into tries (post_id, user_id, ok, text, img, created_at) values')
 out.push(
   demoTries
-    .map((t) => `  (${q(postId(t.postId))}, ${q(userId(t.userId))}, ${t.ok}, ${q(t.text)}, ${json(t.img)}, ${ago(t.createdAt)})`)
+    .map((t) => `  (${q(postId(t.postId))}, ${q(userId(t.userId))}, ${t.ok}, ${q(t.text)}, ${json(t.img && pic(t.img))}, ${ago(t.createdAt)})`)
     .join(',\n') + ';',
   '',
 )

@@ -1,14 +1,8 @@
 import type { Img } from './data/types'
 
-/** Адрес картинки. Заглушки — фотосток по теме (loremflickr), запасной — picsum. */
-export function imgSrc(img: Img, w = 600): string {
-  if (img.src) return img.src
-  const h = Math.round(w * img.ratio)
-  return `https://loremflickr.com/${w}/${h}/${encodeURIComponent(img.tag ?? 'food')}?lock=${img.seed ?? 1}`
-}
-export function imgFallback(img: Img, w = 600): string {
-  const h = Math.round(w * img.ratio)
-  return `https://picsum.photos/seed/klubok${img.seed ?? 1}/${w}/${h}`
+/** Адрес картинки: файл в хранилище Supabase или только что выбранное фото (data:URL) */
+export function imgSrc(img: Img): string {
+  return img.src ?? ''
 }
 
 export function plural(n: number, one: string, few: string, many: string) {

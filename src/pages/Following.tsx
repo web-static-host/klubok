@@ -5,7 +5,7 @@ import { useStore } from '../store'
 import { useUi } from '../ui-context'
 import { cx, num, plural, timeAgo } from '../lib'
 import { MobileTop } from '../components/Layout'
-import { Avatar, Button, Empty, Picture, TypeBadge } from '../components/ui'
+import { Avatar, Button, Empty, Picture, TopicBadge } from '../components/ui'
 
 /** Лента подписок — одна колонка, как в Instagram (DESIGN_WEB 3.4) */
 function FeedCard({ post }: { post: Post }) {
@@ -29,7 +29,7 @@ function FeedCard({ post }: { post: Post }) {
           </Link>
           <span className="text-xs">{timeAgo(post.createdAt)}</span>
         </div>
-        {post.type !== 'photo' && <TypeBadge type={post.type} />}
+        <TopicBadge topic={post.topic} className="max-w-[45%]" />
       </header>
 
       <Link to={`/p/${post.id}`} className="block rounded-xl">

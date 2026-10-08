@@ -4,7 +4,7 @@ import type { Post } from '../data/types'
 import { useStore } from '../store'
 import { useUi } from '../ui-context'
 import { cx, num } from '../lib'
-import { Avatar, Picture, TypeBadge } from './ui'
+import { Avatar, Picture, TopicBadge } from './ui'
 
 /** Карточка ленты — DESIGN_WEB 3.3 */
 export function PinCard({ post, folderId }: { post: Post; folderId?: string }) {
@@ -23,7 +23,7 @@ export function PinCard({ post, folderId }: { post: Post; folderId?: string }) {
           <Picture img={post.images[0]} w={500} className="rounded-2xl" alt={post.title} />
           <span className="pointer-events-none absolute inset-0 rounded-2xl bg-black/0 transition-colors duration-200 group-hover:bg-black/15" />
         </Link>
-        {post.type !== 'photo' && <TypeBadge type={post.type} className="pointer-events-none absolute top-2 left-2" />}
+        <TopicBadge topic={post.topic} className="pointer-events-none absolute top-2 left-2 max-w-[calc(100%-56px)]" />
         {folder ? (
           <button
             type="button"

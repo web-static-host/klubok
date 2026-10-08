@@ -99,10 +99,3 @@ export const TOPICS: { id: Topic; label: string }[] = [
 
 /** Название категории: из списка или своя как есть */
 export const topicLabel = (t: Topic) => TOPICS.find((x) => x.id === t)?.label ?? t
-
-export const TYPE_META: Record<PostType, { label: string; colors: [string, string] }> = {
-  photo: { label: 'Фото', colors: ['#38BDF8', '#2563EB'] },
-  recipe: { label: 'Рецепт', colors: ['#FB923C', '#F97316'] },
-  hack: { label: 'Лайфхак', colors: ['#2DD4BF', '#0891B2'] },
-  beforeafter: { label: 'До и после', colors: ['#A855F7', '#6366F1'] },
-}

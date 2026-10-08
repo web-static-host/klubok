@@ -21,7 +21,7 @@ import { useStore } from '../store'
 import { useUi } from '../ui-context'
 import { cx, num, plural, timeAgo } from '../lib'
 import { Masonry } from '../components/Masonry'
-import { Avatar, Button, Empty, IconButton, Picture, TypeBadge } from '../components/ui'
+import { Avatar, Button, Empty, IconButton, Picture } from '../components/ui'
 
 export function PostPage() {
   const { id = '' } = useParams()
@@ -109,7 +109,6 @@ export function PostPage() {
               >
                 <BadgeCheck size={14} className="text-accent" strokeWidth={2.4} /> Оригинал
               </span>
-              {p.type !== 'photo' && <TypeBadge type={p.type} />}
               <Link
                 to={`/search?q=${encodeURIComponent(topicLabel(p.topic))}`}
                 className="press rounded-full border border-line bg-surface px-2.5 py-1 text-xs font-semibold hover:bg-active"

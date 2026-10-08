@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, ImagePlus, Plus, X } from 'lucide-react'
 import type { Img, Topic } from '../data/types'
 import { TOPICS } from '../data/types'
@@ -7,6 +7,7 @@ import { Rejected, useStore } from '../store'
 import { useUi } from '../ui-context'
 import { cx, fileToImg } from '../lib'
 import { Sheet } from './Sheet'
+import { RulesLink } from './RulesSheet'
 import { Button, Chip } from './ui'
 
 const field = 'card w-full px-4 py-3 text-base outline-none placeholder:text-muted'
@@ -93,11 +94,7 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
       >
         <p className="text-sm leading-relaxed">
           Вся идея — на картинках: шаги, состав, подсказки. Без людей в кадре (руки можно). До {MAX} картинок, их будут листать. Перед
-          публикацией всё проверяется по{' '}
-          <Link to="/rules" onClick={close} className="font-semibold text-accent hover:underline">
-            правилам
-          </Link>
-          .
+          публикацией всё проверяется по <RulesLink className="font-semibold text-accent hover:underline">правилам</RulesLink>.
         </p>
         {images.length === 0 ? (
           <button

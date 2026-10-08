@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
 import { Eye, EyeOff, MailCheck } from 'lucide-react'
 import { useStore } from '../store'
 import { useUi } from '../ui-context'
 import { cx } from '../lib'
 import { Sheet } from './Sheet'
+import { RulesLink } from './RulesSheet'
 import { Button, Segmented } from './ui'
 
 type Mode = 'signin' | 'signup' | 'forgot'
@@ -171,9 +171,7 @@ export function LoginForm({ hint, onDone }: { hint?: string; onDone?: () => void
             Вернуться ко входу
           </button>
         ) : (
-          <Link to="/rules" className="hover:underline" onClick={onDone}>
-            Правила Клубка
-          </Link>
+          <RulesLink className="hover:underline">Правила Клубка</RulesLink>
         )}
       </div>
       {mode === 'signup' && <p className="text-center text-[11px] leading-relaxed">Регистрируясь, вы соглашаетесь с правилами Клубка.</p>}

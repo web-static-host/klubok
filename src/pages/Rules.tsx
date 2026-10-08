@@ -39,16 +39,12 @@ const RULES: { title: string; items: string[] }[] = [
   },
 ]
 
-export function Rules() {
-  const nav = useNavigate()
+/** Текст правил — общий для страницы и окна */
+export function RulesList() {
   return (
-    <div className="mx-auto max-w-2xl px-3 pt-3 md:pt-8">
-      <div className="mb-3 flex items-center gap-3">
-        <IconButton icon={ArrowLeft} label="Назад" onClick={() => (window.history.length > 1 ? nav(-1) : nav('/'))} />
-        <h1 className="text-2xl font-bold">Правила Клубка</h1>
-      </div>
-      {RULES.map((sec) => (
-        <section key={sec.title} className="mt-5">
+    <>
+      {RULES.map((sec, i) => (
+        <section key={sec.title} className={i ? 'mt-5' : ''}>
           <h2 className="section-label mb-2">{sec.title}</h2>
           <ul className="card flex flex-col gap-2 p-4">
             {sec.items.map((it) => (
@@ -60,6 +56,20 @@ export function Rules() {
           </ul>
         </section>
       ))}
+    </>
+  )
+}
+
+/** Страница #/rules — можно открыть в отдельной вкладке */
+export function Rules() {
+  const nav = useNavigate()
+  return (
+    <div className="mx-auto max-w-2xl px-3 pt-3 md:pt-8">
+      <div className="mb-5 flex items-center gap-3">
+        <IconButton icon={ArrowLeft} label="Назад" onClick={() => (window.history.length > 1 ? nav(-1) : nav('/'))} />
+        <h1 className="text-2xl font-bold">Правила Клубка</h1>
+      </div>
+      <RulesList />
     </div>
   )
 }

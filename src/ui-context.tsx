@@ -3,6 +3,7 @@ import { SaveSheet } from './components/SaveSheet'
 import { TriedSheet } from './components/TriedSheet'
 import { CreateSheet } from './components/CreateSheet'
 import { LoginSheet, NewPasswordSheet } from './components/LoginSheet'
+import { RulesSheet } from './components/RulesSheet'
 import { useStore } from './store'
 
 /** Общие окна: «Сохранить в папку», «Я попробовал», «Создать», «Вход». Открываются из любого места; гостю — сначала вход. */
@@ -10,6 +11,8 @@ interface Ui {
   openSave: (postId: string) => void
   openTried: (postId: string) => void
   openCreate: () => void
+  /** правила — окном поверх текущего */
+  openRules: () => void
   toast: (text: string) => void
 }
 const Ctx = createContext<Ui | null>(null)
@@ -18,6 +21,7 @@ export function UiProvider({ children }: { children: ReactNode }) {
   const [save, setSave] = useState<string | null>(null)
   const [tried, setTried] = useState<string | null>(null)
   const [create, setCreate] = useState(false)
+  const [rules, setRules] = useState(false)
   const [toastText, setToastText] = useState<string | null>(null)
 
   const { authed, setLoginOpen, notice, clearNotice, post, me } = useStore()
@@ -48,6 +52,7 @@ export function UiProvider({ children }: { children: ReactNode }) {
           post(id)?.authorId === me.id ? toast('Это ваша идея — отзывы оставляют те, кто её повторил') : setTried(id),
         ),
         openCreate: guard(() => setCreate(true)),
+        openRules: () => setRules(true),
         toast,
       }}
     >
@@ -57,6 +62,7 @@ export function UiProvider({ children }: { children: ReactNode }) {
       <CreateSheet open={create} onClose={() => setCreate(false)} />
       <LoginSheet />
       <NewPasswordSheet />
+      <RulesSheet open={rules} onClose={() => setRules(false)} />
       {toastText && (
         <div
           role="status"

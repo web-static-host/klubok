@@ -1,10 +1,10 @@
 import { useRef, useState } from 'react'
-import { Camera, ThumbsDown, ThumbsUp, X } from 'lucide-react'
-import type { Img } from '../data/types'
+import { Camera, Loader2, ThumbsDown, ThumbsUp, X } from 'lucide-react'
 import { Rejected, useStore } from '../store'
 import { useUi } from '../ui-context'
 import { cx, fileToImg } from '../lib'
 import { Sheet } from './Sheet'
+import { useCheckedImages } from './useCheckedImages'
 import { Button } from './ui'
 
 /** «Я попробовал» — DESIGN_WEB 3.6: результат обязателен, фото и комментарий — по желанию */
@@ -13,7 +13,9 @@ export function TriedSheet({ postId, onClose }: { postId: string | null; onClose
   const { toast } = useUi()
   const [ok, setOk] = useState<boolean | null>(null)
   const [text, setText] = useState('')
-  const [img, setImg] = useState<Img | undefined>()
+  // фото загружается и проверяется сразу после выбора
+  const pics = useCheckedImages('post')
+  const photo = pics.items[0]
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
   const file = useRef<HTMLInputElement>(null)
@@ -23,7 +25,7 @@ export function TriedSheet({ postId, onClose }: { postId: string | null; onClose
     if (busy) return
     setOk(null)
     setText('')
-    setImg(undefined)
+    pics.reset()
     setErr('')
     onClose()
   }
@@ -34,9 +36,10 @@ export function TriedSheet({ postId, onClose }: { postId: string | null; onClose
       setErr('Выберите результат: получилось или нет')
       return
     }
+    if (photo?.status === 'bad') return setErr('Уберите фото — оно не прошло проверку')
     setBusy(true)
     try {
-      await addTry(postId, ok, text.trim() || undefined, img)
+      await addTry(postId, ok, text.trim() || undefined, pics.result()[0])
     } catch (e) {
       setBusy(false)
       setErr(
@@ -49,7 +52,7 @@ export function TriedSheet({ postId, onClose }: { postId: string | null; onClose
     setBusy(false)
     setOk(null)
     setText('')
-    setImg(undefined)
+    pics.reset()
     onClose()
     toast(ok ? 'Отлично! Ваш результат добавлен' : 'Спасибо, это поможет другим')
   }
@@ -102,17 +105,33 @@ export function TriedSheet({ postId, onClose }: { postId: string | null; onClose
       )}
 
       <p className="section-label mt-5 mb-2">Фото результата · по желанию</p>
-      {img ? (
-        <div className="relative w-28">
-          <img src={img.src} alt="Ваше фото" className="h-28 w-28 rounded-2xl object-cover" />
-          <button
-            type="button"
-            aria-label="Убрать фото"
-            onClick={() => setImg(undefined)}
-            className="press glass-strong absolute -top-2 -right-2 inline-flex h-7 w-7 items-center justify-center rounded-full"
-          >
-            <X size={14} strokeWidth={2.4} />
-          </button>
+      {photo ? (
+        <div className="flex items-start gap-3">
+          <div className="relative w-28 shrink-0">
+            <img
+              src={photo.preview.src}
+              alt="Ваше фото"
+              className={cx('h-28 w-28 rounded-2xl object-cover', photo.status === 'bad' && 'opacity-40')}
+            />
+            {photo.status === 'checking' && (
+              <span className="glass-strong absolute inset-x-1.5 top-1/2 inline-flex -translate-y-1/2 items-center justify-center gap-1 rounded-full py-1 text-[11px] font-bold">
+                <Loader2 size={13} className="animate-spin" /> Проверяем…
+              </span>
+            )}
+            <button
+              type="button"
+              aria-label="Убрать фото"
+              onClick={() => pics.reset()}
+              className="press glass-strong absolute -top-2 -right-2 inline-flex h-7 w-7 items-center justify-center rounded-full"
+            >
+              <X size={14} strokeWidth={2.4} />
+            </button>
+          </div>
+          {photo.status === 'bad' && (
+            <p className="text-xs leading-relaxed font-semibold text-rose-500" role="alert">
+              Фото не прошло проверку: {photo.reasons?.join('. ')}
+            </p>
+          )}
         </div>
       ) : (
         <button
@@ -130,8 +149,8 @@ export function TriedSheet({ postId, onClose }: { postId: string | null; onClose
         hidden
         onChange={async (e) => {
           const f = e.target.files?.[0]
-          if (f) setImg(await fileToImg(f, 700))
           e.target.value = ''
+          if (f) pics.add([await fileToImg(f, 900)])
         }}
       />
 
@@ -145,8 +164,8 @@ export function TriedSheet({ postId, onClose }: { postId: string | null; onClose
         className="card w-full resize-none px-4 py-3 text-base outline-none placeholder:text-muted"
       />
 
-      <Button className="mt-4 w-full" onClick={submit} disabled={busy}>
-        {busy ? 'Отправляем…' : 'Отправить'}
+      <Button className="mt-4 w-full" onClick={submit} disabled={busy || pics.pending > 0}>
+        {busy ? 'Отправляем…' : pics.pending ? 'Проверяем фото…' : 'Отправить'}
       </Button>
     </Sheet>
   )

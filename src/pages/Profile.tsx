@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Camera, ChevronRight, ImageOff, LogOut, Monitor, Moon, Pencil, Sun } from 'lucide-react'
+import { ArrowLeft, Camera, Loader2, ChevronRight, ImageOff, LogOut, Monitor, Moon, Pencil, Sun } from 'lucide-react'
 import { useStore, type ThemeMode } from '../store'
 import { num, plural } from '../lib'
 import type { Img } from '../data/types'
@@ -9,6 +9,7 @@ import { Avatar, Button, Empty, IconButton, Segmented } from '../components/ui'
 import { Sheet } from '../components/Sheet'
 import { LoginForm } from '../components/LoginSheet'
 import { AvatarCropper } from '../components/AvatarCropper'
+import { useCheckedImages } from '../components/useCheckedImages'
 import { FolderCard, NewFolderButton } from './Folders'
 
 type Tab = 'posts' | 'folders' | 'tried'
@@ -160,8 +161,10 @@ function EditProfile({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState(me.name)
   const [handle, setHandle] = useState(me.handle)
   const [bio, setBio] = useState(me.bio)
-  // undefined — фото не меняли, null — убрали, картинка — новое
+  // undefined — фото не меняли, null — убрали, картинка — новое (загружается и проверяется сразу)
   const [avatar, setAvatar] = useState<Img | null | undefined>(undefined)
+  const pic = useCheckedImages('avatar')
+  const fresh = pic.items[0]
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
   const file = useRef<HTMLInputElement>(null)
@@ -175,15 +178,31 @@ function EditProfile({ onClose }: { onClose: () => void }) {
           e.preventDefault()
           if (!name.trim()) return setErr('Напишите имя или название')
           if (!/^[a-z0-9_]{3,30}$/.test(handle)) return setErr('Ник: от 3 до 30 латинских букв, цифр или _')
+          if (fresh?.status === 'bad') return setErr(`Фото не прошло проверку: ${fresh.reasons?.join('. ')}`)
           setBusy(true)
-          const error = await updateProfile({ name: name.trim(), handle, bio: bio.trim(), avatar })
+          const error = await updateProfile({
+            name: name.trim(),
+            handle,
+            bio: bio.trim(),
+            avatar: avatar === null ? null : fresh ? pic.result()[0] : undefined,
+          })
           setBusy(false)
           if (error) setErr(error)
           else onClose()
         }}
       >
         <div className="flex items-center gap-4">
-          <Avatar user={shown} size={72} />
+          <div className="relative shrink-0">
+            <Avatar user={shown} size={72} />
+            {fresh?.status === 'checking' && (
+              <span
+                className="absolute inset-0 inline-flex items-center justify-center rounded-full bg-black/40 text-white"
+                title="Проверяем фото"
+              >
+                <Loader2 size={22} className="animate-spin" />
+              </span>
+            )}
+          </div>
           <div className="flex flex-col items-start gap-1.5">
             <Button type="button" kind="secondary" size="sm" icon={Camera} onClick={() => file.current?.click()}>
               {shown.avatar ? 'Сменить фото' : 'Загрузить фото'}
@@ -192,7 +211,10 @@ function EditProfile({ onClose }: { onClose: () => void }) {
               <button
                 type="button"
                 className="press px-1 text-xs font-semibold text-rose-500 hover:underline"
-                onClick={() => setAvatar(null)}
+                onClick={() => {
+                  pic.reset()
+                  setAvatar(null)
+                }}
               >
                 Убрать фото
               </button>
@@ -243,14 +265,21 @@ function EditProfile({ onClose }: { onClose: () => void }) {
             {err}
           </p>
         )}
-        <Button type="submit" disabled={busy}>
-          {busy ? 'Проверяем и сохраняем…' : 'Сохранить'}
+        {fresh?.status === 'bad' && (
+          <p className="rounded-xl bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-500" role="alert">
+            Фото не прошло проверку: {fresh.reasons?.join('. ')}
+          </p>
+        )}
+        <Button type="submit" disabled={busy || pic.pending > 0}>
+          {busy ? 'Сохраняем…' : pic.pending ? 'Проверяем фото…' : 'Сохранить'}
         </Button>
       </form>
       <AvatarCropper
         file={cropFile}
         onCancel={() => setCropFile(null)}
         onDone={(img) => {
+          pic.reset()
+          pic.add([img])
           setAvatar(img)
           setCropFile(null)
         }}

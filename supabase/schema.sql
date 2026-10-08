@@ -4,7 +4,7 @@
 
 -- ─── Очистка ────────────────────────────────────────────────
 drop trigger if exists on_auth_user_created on auth.users;
-drop table if exists try_replies, likes, follows, folder_items, folders, tries, posts, profiles cascade;
+drop table if exists image_checks, try_replies, likes, follows, folder_items, folders, tries, posts, profiles cascade;
 drop function if exists handle_new_user, bump_post_likes, bump_followers, bump_post_tries cascade;
 drop type if exists post_type, post_topic cascade;
 
@@ -94,6 +94,23 @@ create table try_replies (
   created_at timestamptz not null default now()
 );
 create index try_replies_try_idx on try_replies (try_id, created_at);
+
+-- ─── Проверка картинок (результаты ИИ; только для функции publish) ───
+create table image_checks (
+  -- путь в хранилище: <id пользователя>/<файл>.jpg
+  path text primary key,
+  user_id uuid not null references profiles (id) on delete cascade,
+  -- проверено по правилам публикаций («без людей»); false — как аватар (люди можно)
+  strict boolean not null default true,
+  ok boolean not null,
+  reasons text[] not null default '{}',
+  tags text[] not null default '{}',
+  ai_text text,
+  by_ai boolean not null default false,
+  created_at timestamptz not null default now()
+);
+-- читать и писать может только функция publish
+alter table image_checks enable row level security;
 
 -- ─── Подписки и лайки ───────────────────────────────────────
 create table follows (

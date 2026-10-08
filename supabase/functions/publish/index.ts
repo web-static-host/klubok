@@ -93,11 +93,24 @@ const LINK_PATTERNS = [
   // site.ru, site . ru, site(.)ru, site[dot]ru, site точка ру
   new RegExp(`[a-zа-я0-9-]{2,}\\s*(?:\\.|\\(\\s*\\.\\s*\\)|\\[\\s*\\.\\s*\\]|\\(dot\\)|\\[dot\\]|\\sdot\\s|\\sточка\\s|\\s\\.\\s)\\s*${TLD}(?![a-zа-я])`, 'i'),
   /\bt\s*\.\s*me\b|\bwa\s*\.\s*me\b|\bvk\s*\.\s*(?:com|cc|me)\b/i,
-  // телефон: 10+ цифр подряд с пробелами, скобками, дефисами
-  /(?:\+?\d[\s\-()]*){10,}/,
+  // телефон: +7 / 8 и 10 цифр группами (999) 123-45-67, или 10–12 цифр подряд.
+  // Просто числа через пробел (номера шагов, граммовки) — не телефон.
+  /(?:\+7|(?<!\d)8)[\s-]*\(?\d{3}\)?[\s-]*\d{3}[\s-]*\d{2}[\s-]*\d{2}(?!\d)/,
+  /\+\d{1,3}[\s-]*\(?\d{2,4}\)?(?:[\s-]*\d{2,4}){2,4}(?!\d)/,
+  /(?<!\d)\d{10,12}(?!\d)/,
   // почта: name@site, name собака site
   /[a-z0-9._-]+\s*(?:@|\(at\)|\[at\]|\sсобака\s)\s*[a-z0-9-]+\s*(?:\.|\sточка\s)\s*[a-z]{2,}/i,
 ]
+
+/** Текст, прочитанный ИИ с картинки: только явные ссылки и мат (числа, граммовки, «ст. л.» — не нарушение) */
+const STRICT_LINKS = [/https?\s*:|www\s*\.|:\s*\/\//i, /\b[a-z0-9-]{2,}\.(?:ru|рф|su|com|net|org|info|io|me|online|site|store|shop|pro|club|xyz|ly|app|dev|link|top|by|kz|ua)\b/i, /\bt\.me\b|\bwa\.me\b|\bvk\.com\b/i]
+export function imageTextCheck(text: string): string[] {
+  const reasons: string[] = []
+  if (!text.trim()) return reasons
+  if (STRICT_LINKS.some((r) => r.test(text))) reasons.push('На картинке есть ссылка или адрес сайта')
+  if (MAT.test(normalize(text))) reasons.push('На картинке есть нецензурная брань')
+  return reasons
+}
 
 /** Причины отказа по быстрым проверкам (пустой список — всё хорошо) */
 export function quickTextCheck(text: string): string[] {
@@ -214,8 +227,9 @@ async function aiCheckImage(src: string, allowPeople = false): Promise<Verdict> 
 ${
         allowPeople
           ? 'Это фото профиля (аватар): люди и лица на нём разрешены, остальные правила действуют. Поле people всегда false.'
-          : 'Отдельное правило: на картинках публикаций не должно быть людей — лиц, тел, фигур, селфи (руки в кадре можно; нарисованные схематичные человечки на инфографике — тоже можно).'
+          : 'Отдельное правило: на картинках публикаций не должно быть людей. people = true ТОЛЬКО если явно видно лицо человека или человеческая фигура/тело (на фото или реалистичном рисунке). НЕ люди: руки и пальцы, еда, посуда, предметы, растения, животные, иконки, схемы, нарисованные человечки-значки. Если сомневаешься — people = false.'
       }
+ok = false ставь только при явном нарушении правил; рецепты, инструкции, инфографика с текстом и цифрами — это нормально.
 Ответь только JSON без пояснений:
 {"ok": true или false, "people": true или false, "reasons": ["коротко по-русски, что нарушено"], "text": "весь текст с картинки дословно, или пусто", "tags": ["5–15 слов по-русски: что изображено, продукты, предметы, действия"], "description": "одно предложение: что на картинке"}`,
       'Проверь картинку по правилам и опиши её.',
@@ -247,29 +261,80 @@ async function removeImages(imgs: ImgIn[]) {
   if (paths.length) await admin.storage.from('images').remove(paths)
 }
 
-/** Проверка текста и картинок. ИИ недоступен — остаются быстрые проверки, пост помечается как не проверенный ИИ */
-export async function moderate(texts: string[], images: ImgIn[], allowPeople = false) {
-  const text = texts.filter(Boolean).join('\n')
-  const reasons = quickTextCheck(text)
-  if (reasons.length) return { ok: false, reasons, ai: false, tags: [] as string[], aiText: '' }
+interface ImageCheck {
+  ok: boolean
+  reasons: string[]
+  tags: string[]
+  aiText: string
+  ai: boolean
+}
+
+/**
+ * Проверка одной картинки: ИИ (правила, «нет людей», текст на ней) + явные ссылки и мат в этом тексте.
+ * Результат запоминается в image_checks: картинку проверяют сразу после загрузки, и при публикации ждать не нужно.
+ */
+async function checkImage(img: ImgIn, uid: string, allowPeople: boolean): Promise<ImageCheck> {
+  const path = img.src.slice(PUBLIC_PREFIX.length)
+  const { data: saved } = await admin.from('image_checks').select('*').eq('path', path).maybeSingle()
+  // проверка «без людей» годится и для аватара; проверка аватара для поста — нет
+  if (saved && saved.user_id === uid && saved.by_ai && (saved.strict || allowPeople))
+    return { ok: saved.ok, reasons: saved.reasons ?? [], tags: saved.tags ?? [], aiText: saved.ai_text ?? '', ai: true }
+  let res: ImageCheck
   try {
-    const verdicts: Verdict[] = []
-    if (text.trim()) verdicts.push(await aiCheckText(text))
-    for (const img of images) verdicts.push(await aiCheckImage(img.src, allowPeople)) // по очереди: у личного тарифа один поток
-    const bad = verdicts.flatMap((v) => (v.ok ? [] : v.reasons.length ? v.reasons : ['Содержимое нарушает правила']))
-    // текст на картинках — тоже через быстрые проверки
-    const imgText = verdicts.map((v) => v.text).join('\n')
-    bad.push(...quickTextCheck(imgText))
-    return {
-      ok: bad.length === 0,
-      reasons: [...new Set(bad)],
+    const v = await aiCheckImage(img.src, allowPeople)
+    const reasons = [...(v.ok ? [] : v.reasons.length ? v.reasons : ['Картинка нарушает правила']), ...imageTextCheck(v.text)]
+    res = {
+      ok: reasons.length === 0,
+      reasons: [...new Set(reasons)],
+      tags: v.tags,
+      aiText: [v.description, v.text].filter(Boolean).join('. '),
       ai: true,
-      tags: [...new Set(verdicts.flatMap((v) => v.tags))].slice(0, 40),
-      aiText: verdicts.map((v) => [v.description, v.text].filter(Boolean).join('. ')).filter(Boolean).join('\n'),
     }
   } catch (e) {
     console.error('ИИ недоступен:', e instanceof Error ? e.message : e)
-    return { ok: true, reasons: [], ai: false, tags: [] as string[], aiText: '' }
+    return { ok: true, reasons: [], tags: [], aiText: '', ai: false }
+  }
+  await admin.from('image_checks').upsert({
+    path,
+    user_id: uid,
+    strict: !allowPeople,
+    ok: res.ok,
+    reasons: res.reasons,
+    tags: res.tags,
+    ai_text: res.aiText || null,
+    by_ai: true,
+  })
+  return res
+}
+
+/** Проверка текстов: быстрые правила, затем ИИ. ИИ недоступен — только быстрые правила */
+async function checkTexts(texts: string[]): Promise<{ ok: boolean; reasons: string[]; ai: boolean }> {
+  const text = texts.filter(Boolean).join('\n')
+  const reasons = quickTextCheck(text)
+  if (reasons.length) return { ok: false, reasons, ai: false }
+  if (!text.trim()) return { ok: true, reasons: [], ai: true }
+  try {
+    const v = await aiCheckText(text)
+    return { ok: v.ok, reasons: v.ok ? [] : v.reasons.length ? v.reasons : ['Текст нарушает правила'], ai: true }
+  } catch (e) {
+    console.error('ИИ недоступен:', e instanceof Error ? e.message : e)
+    return { ok: true, reasons: [], ai: false }
+  }
+}
+
+/** Тексты + картинки. Картинки по очереди: у личного тарифа GigaChat один поток */
+export async function moderate(texts: string[], images: ImgIn[], uid: string, allowPeople = false) {
+  const t = await checkTexts(texts)
+  if (!t.ok) return { ok: false, reasons: t.reasons, ai: t.ai, tags: [] as string[], aiText: '' }
+  const checks: ImageCheck[] = []
+  for (const img of images) checks.push(await checkImage(img, uid, allowPeople))
+  const reasons = checks.flatMap((c, i) => (c.ok ? [] : c.reasons.map((r) => (images.length > 1 ? `Картинка ${i + 1}: ${r}` : r))))
+  return {
+    ok: reasons.length === 0,
+    reasons,
+    ai: t.ai && checks.every((c) => c.ai),
+    tags: [...new Set(checks.flatMap((c) => c.tags))].slice(0, 40),
+    aiText: checks.map((c) => c.aiText).filter(Boolean).join('\n'),
   }
 }
 
@@ -315,7 +380,7 @@ async function handle(req: Request): Promise<Response> {
     const bad = profileErrors(name, handle)
     if (bad.length) return json({ ok: false, reasons: bad })
     if (await handleTaken(handle)) return json({ ok: false, reasons: ['Такой ник уже занят — придумайте другой'] })
-    const m = await moderate([name, handle], [])
+    const m = await checkTexts([name, handle])
     return json(m.ok ? { ok: true } : { ok: false, reasons: m.reasons })
   }
 
@@ -325,6 +390,14 @@ async function handle(req: Request): Promise<Response> {
   if (!uid) return json({ ok: false, reasons: ['Нужно войти'] }, 401)
 
   switch (body.action) {
+    // проверка картинки сразу после загрузки (в фоне, пока человек заполняет остальное)
+    case 'check-image': {
+      const img = body.img as ImgIn | undefined
+      if (!ownImage(img, uid)) return json({ ok: false, reasons: ['Неверная картинка'] }, 400)
+      const c = await checkImage(img, uid, body.purpose === 'avatar')
+      return json(c.ok ? { ok: true, ai: c.ai } : { ok: false, reasons: c.reasons })
+    }
+
     case 'post': {
       const title = str(body.title, 80)
       const topic = str(body.topic, 40)
@@ -333,11 +406,9 @@ async function handle(req: Request): Promise<Response> {
       if (!title || !topic) return json({ ok: false, reasons: ['Нужны название и категория'] }, 400)
       if (images.length < 1 || images.length > 10 || !images.every((i) => ownImage(i, uid)))
         return json({ ok: false, reasons: ['Нужно от 1 до 10 своих картинок'] }, 400)
-      const m = await moderate([title, topic], images)
-      if (!m.ok) {
-        await removeImages(images)
-        return json({ ok: false, reasons: m.reasons })
-      }
+      const m = await moderate([title, topic], images, uid)
+      // картинки не удаляем: человек исправит название или уберёт плохую картинку и опубликует снова
+      if (!m.ok) return json({ ok: false, reasons: m.reasons })
       const { data, error } = await admin
         .from('posts')
         .insert({
@@ -364,11 +435,8 @@ async function handle(req: Request): Promise<Response> {
       const { data: post } = await admin.from('posts').select('author_id').eq('id', postId).maybeSingle()
       if (!post) return json({ ok: false, reasons: ['Пост не найден'] }, 404)
       if (post.author_id === uid) return json({ ok: false, reasons: ['Это ваша идея — отзывы оставляют те, кто её повторил'] })
-      const m = await moderate([text], img ? [img] : [])
-      if (!m.ok) {
-        if (img) await removeImages([img])
-        return json({ ok: false, reasons: m.reasons })
-      }
+      const m = await moderate([text], img ? [img] : [], uid)
+      if (!m.ok) return json({ ok: false, reasons: m.reasons })
       const { data, error } = await admin
         .from('tries')
         .insert({ post_id: postId, user_id: uid, ok: body.ok === true, text: text || null, img: img ? { src: img.src, ratio: Number(img.ratio) } : null })
@@ -382,7 +450,7 @@ async function handle(req: Request): Promise<Response> {
       const tryId = str(body.tryId, 64)
       const text = str(body.text, 500)
       if (!text) return json({ ok: false, reasons: ['Пустой ответ'] }, 400)
-      const m = await moderate([text], [])
+      const m = await moderate([text], [], uid)
       if (!m.ok) return json({ ok: false, reasons: m.reasons })
       const { data, error } = await admin.from('try_replies').insert({ try_id: tryId, user_id: uid, text }).select().single()
       if (error) return json({ ok: false, reasons: ['Не получилось сохранить'], detail: error.message }, 500)
@@ -402,7 +470,7 @@ async function handle(req: Request): Promise<Response> {
         if (avatar) await removeImages([avatar])
         return json({ ok: false, reasons: ['Такой ник уже занят — придумайте другой'] })
       }
-      const m = await moderate([name, handle, bio], avatar ? [avatar] : [], true)
+      const m = await moderate([name, handle, bio], avatar ? [avatar] : [], uid, true)
       if (!m.ok) {
         if (avatar) await removeImages([avatar])
         return json({ ok: false, reasons: m.reasons })

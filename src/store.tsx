@@ -42,6 +42,10 @@ interface Store {
   toggleFollow: (userId: string) => void
   toggleLike: (postId: string) => void
   addPost: (p: NewPost) => Promise<string>
+  /** загрузить своё фото в хранилище (сразу после выбора) */
+  uploadImg: (img: Img) => Promise<Img>
+  /** проверить загруженную картинку по правилам; нет связи или старая функция — исключение */
+  checkImg: (img: Img, purpose: 'post' | 'avatar') => Promise<{ ok: boolean; reasons: string[] }>
   addTry: (postId: string, ok: boolean, text?: string, img?: Img) => Promise<void>
   /** ответ на отзыв; гостю — окно входа */
   addReply: (tryId: string, text: string) => Promise<void>
@@ -414,6 +418,12 @@ export function StoreProvider({
           ? supabase.from('likes').delete().eq('user_id', uid).eq('post_id', id)
           : supabase.from('likes').insert({ user_id: uid, post_id: id }),
       )
+    },
+    uploadImg: (img) => upload(img),
+    checkImg: async (img, purpose) => {
+      const { data, error } = await supabase.functions.invoke('publish', { body: { action: 'check-image', img, purpose } })
+      if (error || typeof data?.ok !== 'boolean') throw new Error('проверка недоступна')
+      return { ok: data.ok, reasons: data.reasons ?? [] }
     },
     addPost: async (data) => {
       if (!uid) throw new Error('not signed in')

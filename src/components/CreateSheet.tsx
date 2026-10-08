@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, ImagePlus, Plus, X } from 'lucide-react'
-import type { Img, Topic } from '../data/types'
+import { Check, ChevronLeft, ChevronRight, ImagePlus, Loader2, Plus, TriangleAlert, X } from 'lucide-react'
+import type { Topic } from '../data/types'
 import { TOPICS } from '../data/types'
 import { Rejected, useStore } from '../store'
 import { useUi } from '../ui-context'
 import { cx, fileToImg } from '../lib'
 import { Sheet } from './Sheet'
 import { RulesLink } from './RulesSheet'
+import { useCheckedImages } from './useCheckedImages'
 import { Button, Chip } from './ui'
 
 const field = 'card w-full px-4 py-3 text-base outline-none placeholder:text-muted'
@@ -19,7 +20,11 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
   const { addPost } = useStore()
   const { toast } = useUi()
   const nav = useNavigate()
-  const [images, setImages] = useState<Img[]>([])
+  // картинки загружаются и проверяются сразу после выбора, в фоне
+  const pics = useCheckedImages('post')
+  const images = pics.items
+  // нажали «Опубликовать», пока картинки ещё проверяются, — опубликуем сами, когда закончится
+  const [waiting, setWaiting] = useState(false)
   const [beforeAfter, setBeforeAfter] = useState(false)
   const [title, setTitle] = useState('')
   const [topic, setTopic] = useState<Topic>('')
@@ -31,13 +36,12 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
 
   /** Картинки из выбора файла, перетаскивания или вставки (Ctrl+V) */
   const addFiles = async (list: File[]) => {
-    const pics = list.filter((f) => f.type.startsWith('image/'))
-    if (!pics.length) return setErr('Можно добавлять только картинки')
+    const files = list.filter((f) => f.type.startsWith('image/'))
+    if (!files.length) return setErr('Можно добавлять только картинки')
     const room = MAX - images.length
     if (room <= 0) return setErr(`Не больше ${MAX} картинок`)
-    const added = await Promise.all(pics.slice(0, room).map((f) => fileToImg(f, 1400)))
-    setImages((a) => [...a, ...added].slice(0, MAX))
-    setErr(pics.length > room ? `Добавлено ${room}: больше ${MAX} картинок нельзя` : '')
+    pics.add(await Promise.all(files.slice(0, room).map((f) => fileToImg(f, 1400))))
+    setErr(files.length > room ? `Добавлено ${room}: больше ${MAX} картинок нельзя` : '')
   }
   const addRef = useRef(addFiles)
   useEffect(() => {
@@ -66,7 +70,8 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
   }, [open])
 
   const reset = () => {
-    setImages([])
+    pics.reset()
+    setWaiting(false)
     setBeforeAfter(false)
     setTitle('')
     setTopic('')
@@ -79,14 +84,8 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
     onClose()
   }
 
-  const move = (i: number, d: -1 | 1) =>
-    setImages((a) => {
-      const b = [...a]
-      ;[b[i], b[i + d]] = [b[i + d], b[i]]
-      return b
-    })
-
   const publish = async () => {
+    setWaiting(false)
     if (!images.length) return setErr('Добавьте хотя бы одну картинку')
     if (!title.trim()) return setErr('Напишите название')
     let t = topic
@@ -97,13 +96,18 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
       t = TOPICS.find((x) => x.label.toLowerCase() === name.toLowerCase())?.id ?? name[0].toUpperCase() + name.slice(1)
     }
     if (!t) return setErr('Выберите категорию')
+    if (pics.bad) return setErr('Уберите картинки, которые не прошли проверку (отмечены красным)')
+    if (pics.pending) {
+      setErr('')
+      return setWaiting(true)
+    }
     setBusy(true)
     try {
       const id = await addPost({
         type: beforeAfter && images.length === 2 ? 'beforeafter' : 'photo',
         topic: t,
         title: title.trim().replace(/\s+/g, ' '),
-        images,
+        images: pics.result(),
       })
       setBusy(false)
       reset()
@@ -119,6 +123,15 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
       )
     }
   }
+
+  // проверка картинок закончилась — публикуем, если просили
+  const publishRef = useRef(publish)
+  useEffect(() => {
+    publishRef.current = publish
+  })
+  useEffect(() => {
+    if (waiting && !pics.pending) publishRef.current()
+  }, [waiting, pics.pending])
 
   return (
     <Sheet open={open} onClose={close} title="Новая идея" wide>
@@ -162,16 +175,42 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
           </button>
         ) : (
           <div className={cx('grid grid-cols-3 gap-2 rounded-2xl', dragOver && 'outline-2 outline-offset-4 outline-accent outline-dashed')}>
-            {images.map((im, i) => (
-              <div key={i} className="relative">
-                <img src={im.src} alt={`Картинка ${i + 1}`} className="aspect-[3/4] w-full rounded-xl bg-elevated object-contain" />
+            {images.map((it, i) => (
+              <div key={it.key} className="relative">
+                <img
+                  src={it.preview.src}
+                  alt={`Картинка ${i + 1}`}
+                  className={cx('aspect-[3/4] w-full rounded-xl bg-elevated object-contain', it.status === 'bad' && 'opacity-40')}
+                />
+                {it.status === 'checking' && (
+                  <span className="glass-strong absolute inset-x-1.5 top-1/2 inline-flex -translate-y-1/2 items-center justify-center gap-1.5 rounded-full py-1 text-[11px] font-bold">
+                    <Loader2 size={13} className="animate-spin" /> Проверяем…
+                  </span>
+                )}
+                {it.status === 'ok' && (
+                  <span
+                    className="grad absolute top-1/2 left-1/2 inline-flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full opacity-90"
+                    title="Проверено"
+                  >
+                    <Check size={16} strokeWidth={3} />
+                  </span>
+                )}
+                {it.status === 'bad' && (
+                  <span
+                    className="absolute inset-x-1.5 top-10 rounded-xl bg-rose-500 px-2 py-1.5 text-center text-[11px] leading-tight font-bold text-white"
+                    role="alert"
+                  >
+                    <TriangleAlert size={13} className="mx-auto mb-0.5" />
+                    {it.reasons?.join('. ') || 'Не прошла проверку'}
+                  </span>
+                )}
                 <span className="glass-strong absolute top-1.5 left-1.5 rounded-full px-2 text-[11px] font-bold">
                   {beforeAfter && images.length === 2 ? (i ? 'После' : 'До') : i + 1}
                 </span>
                 <button
                   type="button"
                   aria-label={`Убрать картинку ${i + 1}`}
-                  onClick={() => setImages((a) => a.filter((_, j) => j !== i))}
+                  onClick={() => pics.remove(it.key)}
                   className="press glass-strong absolute top-1.5 right-1.5 inline-flex h-7 w-7 items-center justify-center rounded-full"
                 >
                   <X size={14} strokeWidth={2.4} />
@@ -181,7 +220,7 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
                     <button
                       type="button"
                       aria-label="Переставить левее"
-                      onClick={() => move(i, -1)}
+                      onClick={() => pics.move(i, -1)}
                       className="press glass-strong inline-flex h-7 w-7 items-center justify-center rounded-full"
                     >
                       <ChevronLeft size={16} />
@@ -193,7 +232,7 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
                     <button
                       type="button"
                       aria-label="Переставить правее"
-                      onClick={() => move(i, 1)}
+                      onClick={() => pics.move(i, 1)}
                       className="press glass-strong inline-flex h-7 w-7 items-center justify-center rounded-full"
                     >
                       <ChevronRight size={16} />
@@ -279,9 +318,12 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
             {err}
           </p>
         )}
-        <Button type="submit" className="w-full" disabled={busy}>
-          {busy ? 'Проверяем и публикуем…' : 'Опубликовать'}
+        <Button type="submit" className="w-full" disabled={busy || waiting}>
+          {busy ? 'Публикуем…' : waiting ? `Опубликуем, как только проверим картинки (осталось ${pics.pending})` : 'Опубликовать'}
         </Button>
+        {pics.pending > 0 && !waiting && (
+          <p className="-mt-2 text-center text-xs">Картинки проверяются, пока вы заполняете название и категорию.</p>
+        )}
       </form>
     </Sheet>
   )

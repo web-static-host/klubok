@@ -53,6 +53,8 @@ export function LoginForm({ hint, onDone }: { hint?: string; onDone?: () => void
   const [mode, setMode] = useState<Mode>('signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [name, setName] = useState('')
+  const [handle, setHandle] = useState('')
   const [sent, setSent] = useState<null | { to: string; what: 'confirm' | 'reset' }>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -86,6 +88,10 @@ export function LoginForm({ hint, onDone }: { hint?: string; onDone?: () => void
   const submit = async () => {
     const v = email.trim()
     if (!/^\S+@\S+\.\S+$/.test(v)) return setErr('Проверьте адрес почты')
+    if (mode === 'signup') {
+      if (!name.trim()) return setErr('Напишите имя или название')
+      if (!/^[a-z0-9_]{3,30}$/.test(handle)) return setErr('Ник: от 3 до 30 латинских букв, цифр или _')
+    }
     if (mode !== 'forgot' && password.length < MIN) return setErr(`Пароль — не меньше ${MIN} символов`)
     setBusy(true)
     setErr('')
@@ -96,7 +102,7 @@ export function LoginForm({ hint, onDone }: { hint?: string; onDone?: () => void
       else setSent({ to: v, what: 'reset' })
       return
     }
-    const res = mode === 'signin' ? await signIn(v, password) : await signUp(v, password)
+    const res = mode === 'signin' ? await signIn(v, password) : await signUp(v, password, name.trim().replace(/\s+/g, ' '), handle)
     setBusy(false)
     if (res === 'confirm') setSent({ to: v, what: 'confirm' })
     else if (res) setErr(res)
@@ -129,6 +135,37 @@ export function LoginForm({ hint, onDone }: { hint?: string; onDone?: () => void
           />
         </>
       )}
+      {mode === 'signup' && (
+        <>
+          <input
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value)
+              setErr('')
+            }}
+            maxLength={50}
+            autoComplete="name"
+            placeholder="Имя или название"
+            aria-label="Имя или название"
+            className={field}
+          />
+          <div className="card flex items-center px-4">
+            <span className="text-base text-muted">@</span>
+            <input
+              value={handle}
+              onChange={(e) => {
+                setHandle(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))
+                setErr('')
+              }}
+              maxLength={30}
+              autoComplete="username"
+              placeholder="ник — латиница, цифры, _"
+              aria-label="Ник"
+              className="min-w-0 flex-1 bg-transparent py-3 pl-0.5 text-base outline-none placeholder:text-muted"
+            />
+          </div>
+        </>
+      )}
       <input
         type="email"
         autoComplete="email"
@@ -158,7 +195,15 @@ export function LoginForm({ hint, onDone }: { hint?: string; onDone?: () => void
         </p>
       )}
       <Button type="submit" disabled={busy}>
-        {busy ? 'Подождите…' : mode === 'signin' ? 'Войти' : mode === 'signup' ? 'Зарегистрироваться' : 'Получить ссылку'}
+        {busy
+          ? mode === 'signup'
+            ? 'Проверяем имя и ник…'
+            : 'Подождите…'
+          : mode === 'signin'
+            ? 'Войти'
+            : mode === 'signup'
+              ? 'Зарегистрироваться'
+              : 'Получить ссылку'}
       </Button>
       <div className={cx('flex text-xs font-semibold', mode === 'signin' ? 'justify-between' : 'justify-center')}>
         {mode === 'signin' && (

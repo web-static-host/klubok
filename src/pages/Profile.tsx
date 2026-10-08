@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, ChevronRight, ImageOff, LogOut, MapPin, Monitor, Moon, Pencil, Sun } from 'lucide-react'
+import { ArrowLeft, Camera, ChevronRight, ImageOff, LogOut, Monitor, Moon, Pencil, Sun } from 'lucide-react'
 import { useStore, type ThemeMode } from '../store'
-import { num, plural } from '../lib'
+import { fileToSquare, num, plural } from '../lib'
+import type { Img } from '../data/types'
 import { Masonry } from '../components/Masonry'
 import { Avatar, Button, Empty, IconButton, Segmented } from '../components/ui'
 import { Sheet } from '../components/Sheet'
@@ -53,11 +54,6 @@ export function Profile({ self }: { self?: boolean }) {
         <h1 className="mt-3 text-2xl font-bold">{u.name}</h1>
         <p className="text-sm">@{u.handle}</p>
         {u.bio && <p className="mt-2 max-w-md text-sm leading-relaxed">{u.bio}</p>}
-        {u.city && (
-          <p className="mt-1 inline-flex items-center gap-1 text-xs">
-            <MapPin size={12} /> {u.city}
-          </p>
-        )}
         <dl className="mt-4 grid w-full max-w-sm grid-cols-3 gap-2">
           {[
             { v: posts.length, l: plural(posts.length, 'публикация', 'публикации', 'публикаций') },
@@ -163,25 +159,63 @@ function EditProfile({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState(me.name)
   const [handle, setHandle] = useState(me.handle)
   const [bio, setBio] = useState(me.bio)
-  const [city, setCity] = useState(me.city ?? '')
+  // undefined — фото не меняли, null — убрали, картинка — новое
+  const [avatar, setAvatar] = useState<Img | null | undefined>(undefined)
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
+  const file = useRef<HTMLInputElement>(null)
+  const shown = avatar === undefined ? me : { ...me, avatar: avatar?.src }
   return (
     <Sheet open onClose={onClose} title="Профиль">
       <form
         className="flex flex-col gap-3"
         onSubmit={async (e) => {
           e.preventDefault()
-          if (!name.trim()) return setErr('Напишите имя')
+          if (!name.trim()) return setErr('Напишите имя или название')
           if (!/^[a-z0-9_]{3,30}$/.test(handle)) return setErr('Ник: от 3 до 30 латинских букв, цифр или _')
           setBusy(true)
-          const error = await updateProfile({ name: name.trim(), handle, bio: bio.trim(), city: city.trim() })
+          const error = await updateProfile({ name: name.trim(), handle, bio: bio.trim(), avatar })
           setBusy(false)
           if (error) setErr(error)
           else onClose()
         }}
       >
-        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={50} placeholder="Имя" aria-label="Имя" className={field} />
+        <div className="flex items-center gap-4">
+          <Avatar user={shown} size={72} />
+          <div className="flex flex-col items-start gap-1.5">
+            <Button type="button" kind="secondary" size="sm" icon={Camera} onClick={() => file.current?.click()}>
+              {shown.avatar ? 'Сменить фото' : 'Загрузить фото'}
+            </Button>
+            {shown.avatar && (
+              <button
+                type="button"
+                className="press px-1 text-xs font-semibold text-rose-500 hover:underline"
+                onClick={() => setAvatar(null)}
+              >
+                Убрать фото
+              </button>
+            )}
+          </div>
+          <input
+            ref={file}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={async (e) => {
+              const f = e.target.files?.[0]
+              e.target.value = ''
+              if (f) setAvatar(await fileToSquare(f))
+            }}
+          />
+        </div>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          maxLength={50}
+          placeholder="Имя или название"
+          aria-label="Имя"
+          className={field}
+        />
         <div className="card flex items-center px-4">
           <span className="text-base text-muted">@</span>
           <input
@@ -202,21 +236,13 @@ function EditProfile({ onClose }: { onClose: () => void }) {
           aria-label="О себе"
           className={`${field} resize-none`}
         />
-        <input
-          value={city}
-          onChange={(e) => setCity(e.target.value)}
-          maxLength={50}
-          placeholder="Город"
-          aria-label="Город"
-          className={field}
-        />
         {err && (
           <p className="rounded-xl bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-500" role="alert">
             {err}
           </p>
         )}
         <Button type="submit" disabled={busy}>
-          {busy ? 'Сохраняем…' : 'Сохранить'}
+          {busy ? 'Проверяем и сохраняем…' : 'Сохранить'}
         </Button>
       </form>
     </Sheet>

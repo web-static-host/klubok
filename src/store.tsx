@@ -55,7 +55,7 @@ interface Store {
   /** вход, регистрация, «забыли пароль», новый пароль; вернут текст ошибки или null */
   signIn: (email: string, password: string) => Promise<string | null>
   /** 'confirm' — нужно подтвердить почту по письму */
-  signUp: (email: string, password: string) => Promise<string | 'confirm' | null>
+  signUp: (email: string, password: string, name: string, handle: string) => Promise<string | 'confirm' | null>
   resetPassword: (email: string) => Promise<string | null>
   setPassword: (password: string) => Promise<string | null>
   /** окно «Новый пароль» после ссылки из письма */
@@ -63,7 +63,8 @@ interface Store {
   setRecoveryOpen: (v: boolean) => void
   signOut: () => Promise<void>
   /** изменить свой профиль; вернёт текст ошибки или null */
-  updateProfile: (p: Pick<User, 'name' | 'handle' | 'bio' | 'city'>) => Promise<string | null>
+  /** avatar: не передан — без изменений, null — убрать фото, картинка — новое фото */
+  updateProfile: (p: Pick<User, 'name' | 'handle' | 'bio'> & { avatar?: Img | null }) => Promise<string | null>
   /** окно входа: открывается, когда гость пытается что-то сделать */
   loginOpen: boolean
   setLoginOpen: (v: boolean) => void
@@ -82,8 +83,8 @@ interface ProfileRow {
   name: string
   handle: string
   bio: string
-  city: string | null
   colors: string[]
+  avatar_url: string | null
   followers_count: number
 }
 interface PostRow {
@@ -113,8 +114,8 @@ const toUser = (r: ProfileRow): User => ({
   name: r.name || r.handle,
   handle: r.handle,
   bio: r.bio,
-  city: r.city ?? undefined,
   colors: [r.colors[0] ?? GUEST.colors[0], r.colors[1] ?? GUEST.colors[1]],
+  avatar: r.avatar_url ?? undefined,
   followers: r.followers_count,
 })
 const toPost = (r: PostRow): Post => ({
@@ -470,11 +471,17 @@ export function StoreProvider({
       const { error } = await supabase.auth.signInWithPassword({ email: address, password })
       return error ? authError(error) : null
     },
-    signUp: async (address, password) => {
+    signUp: async (address, password, name, handle) => {
+      // имя и ник: сначала проверка правил и занятости ника, потом регистрация
+      try {
+        await publish({ action: 'check-profile', name, handle })
+      } catch (e) {
+        return e instanceof Rejected ? e.reasons.join('. ') : 'Не получилось проверить имя и ник'
+      }
       const { data, error } = await supabase.auth.signUp({
         email: address,
         password,
-        options: { emailRedirectTo: window.location.origin + window.location.pathname },
+        options: { emailRedirectTo: window.location.origin + window.location.pathname, data: { name, handle } },
       })
       if (error) return authError(error)
       return data.session ? null : 'confirm'
@@ -496,12 +503,14 @@ export function StoreProvider({
     },
     updateProfile: async (p) => {
       if (!uid) return 'Нужно войти'
+      let row: ProfileRow
       try {
-        await publish({ action: 'profile', ...p })
+        const avatar = p.avatar === undefined ? undefined : p.avatar === null ? null : await upload(p.avatar)
+        row = (await publish({ action: 'profile', name: p.name, handle: p.handle, bio: p.bio, avatar })) as ProfileRow
       } catch (e) {
         return e instanceof Rejected ? e.reasons.join('. ') : 'Не получилось сохранить'
       }
-      setUsers((us) => us.map((u) => (u.id === uid ? { ...u, ...p, city: p.city || undefined } : u)))
+      setUsers((us) => us.map((u) => (u.id === uid ? toUser(row) : u)))
       return null
     },
     loginOpen,

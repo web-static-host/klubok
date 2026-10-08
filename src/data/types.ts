@@ -20,8 +20,9 @@ export interface User {
   handle: string
   bio: string
   colors: [string, string]
+  /** фото профиля (файл в хранилище); нет — кружок с буквами */
+  avatar?: string
   followers: number
-  city?: string
 }
 
 /** Пост: вся информация — на картинках, текста нет, только название */

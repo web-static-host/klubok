@@ -21,7 +21,6 @@ export const users: User[] = [
     bio: 'Собираю идеи для дома и кухни',
     colors: ['#2DD4BF', '#0891B2'],
     followers: 12,
-    city: 'Калуга',
   },
   {
     id: 'u1',
@@ -30,7 +29,6 @@ export const users: User[] = [
     bio: 'Готовлю просто и вкусно. Выпечка по выходным.',
     colors: ['#FDBA74', '#EA580C'],
     followers: 18400,
-    city: 'Москва',
   },
   {
     id: 'u2',
@@ -39,7 +37,6 @@ export const users: User[] = [
     bio: 'Ремонт своими руками без лишних трат',
     colors: ['#818CF8', '#4338CA'],
     followers: 9300,
-    city: 'Тула',
   },
   {
     id: 'u3',
@@ -48,7 +45,6 @@ export const users: User[] = [
     bio: 'Вяжу, шью, рисую. Мастер-классы для начинающих.',
     colors: ['#F9A8D4', '#DB2777'],
     followers: 26100,
-    city: 'Санкт-Петербург',
   },
   {
     id: 'u4',
@@ -57,7 +53,6 @@ export const users: User[] = [
     bio: 'Дача, теплица и всё, что растёт',
     colors: ['#6EE7B7', '#059669'],
     followers: 7200,
-    city: 'Калуга',
   },
   {
     id: 'u5',
@@ -66,7 +61,6 @@ export const users: User[] = [
     bio: 'Порядок и уют в маленькой квартире',
     colors: ['#C084FC', '#7C3AED'],
     followers: 31800,
-    city: 'Казань',
   },
   {
     id: 'u6',
@@ -75,7 +69,6 @@ export const users: User[] = [
     bio: 'Мангал, казан и походная кухня',
     colors: ['#FCA5A5', '#DC2626'],
     followers: 5400,
-    city: 'Краснодар',
   },
   {
     id: 'u7',
@@ -84,7 +77,6 @@ export const users: User[] = [
     bio: 'Хлеб на закваске и десерты без сахара',
     colors: ['#FCD34D', '#D97706'],
     followers: 14700,
-    city: 'Екатеринбург',
   },
   {
     id: 'u8',
@@ -93,7 +85,6 @@ export const users: User[] = [
     bio: 'Бытовые хитрости, которые реально работают',
     colors: ['#38BDF8', '#2563EB'],
     followers: 42300,
-    city: 'Новосибирск',
   },
 ]
 

@@ -37,10 +37,10 @@ const out: string[] = [
 ]
 
 const demo = users.filter((u) => u.id !== ME)
-out.push('insert into profiles (id, name, handle, bio, city, colors, followers_count, is_demo) values')
+out.push('insert into profiles (id, name, handle, bio, colors, followers_count, is_demo) values')
 out.push(
   demo
-    .map((u) => `  (${q(userId(u.id))}, ${q(u.name)}, ${q(u.handle)}, ${q(u.bio)}, ${q(u.city)}, ${arr(u.colors)}, ${u.followers}, true)`)
+    .map((u) => `  (${q(userId(u.id))}, ${q(u.name)}, ${q(u.handle)}, ${q(u.bio)}, ${arr(u.colors)}, ${u.followers}, true)`)
     .join(',\n') + ';',
   '',
 )

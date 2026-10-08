@@ -18,7 +18,6 @@ create table profiles (
   name text not null default '',
   handle text not null unique check (handle ~ '^[a-z0-9_]{3,30}$'),
   bio text not null default '',
-  city text,
   -- два цвета градиента для аватарки без фото
   colors text[] not null default array['#2DD4BF', '#0891B2'],
   avatar_url text,
@@ -154,25 +153,30 @@ create trigger tries_count after insert or update or delete on tries for each ro
 
 -- Счётчики нельзя подделать с сайта: менять разрешено только обычные поля.
 revoke update on profiles, posts, tries, folder_items, try_replies from anon, authenticated;
-grant update (name, handle, bio, city, colors, avatar_url) on profiles to authenticated;
+grant update (name, handle, bio, colors, avatar_url) on profiles to authenticated;
 grant update (topic, title, images, tags) on posts to authenticated;
 grant update (ok, text, img) on tries to authenticated;
 grant update (done) on folder_items to authenticated;
 
 -- ─── Новый пользователь → профиль и первая папка ────────────
+-- Имя и ник человек вводит при регистрации (сайт заранее проверяет их функцией publish: правила и занятость ника).
+-- Если ник вдруг занят или неверный — временный user_123456, его можно сменить в профиле.
 create function handle_new_user() returns trigger
 language plpgsql security definer set search_path = public as $$
 declare
-  base text := lower(regexp_replace(split_part(coalesce(new.email, 'user'), '@', 1), '[^a-zA-Z0-9_]', '', 'g'));
+  want text := lower(coalesce(new.raw_user_meta_data ->> 'handle', ''));
+  nm text := left(btrim(regexp_replace(coalesce(new.raw_user_meta_data ->> 'name', ''), '\s+', ' ', 'g')), 50);
   h text;
 begin
-  if char_length(base) < 3 then base := 'user'; end if;
-  base := left(base, 24);
-  h := base;
-  while exists (select 1 from profiles where handle = h) loop
-    h := base || '_' || floor(random() * 10000)::int;
-  end loop;
-  insert into profiles (id, name, handle) values (new.id, coalesce(new.raw_user_meta_data ->> 'name', base), h);
+  if want ~ '^[a-z0-9_]{3,30}$' and not exists (select 1 from profiles where handle = want) then
+    h := want;
+  else
+    loop
+      h := 'user_' || lpad(floor(random() * 1000000)::int::text, 6, '0');
+      exit when not exists (select 1 from profiles where handle = h);
+    end loop;
+  end if;
+  insert into profiles (id, name, handle) values (new.id, coalesce(nullif(nm, ''), h), h);
   insert into folders (owner_id, name) values (new.id, 'Хочу попробовать');
   return new;
 end $$;
@@ -230,7 +234,7 @@ create policy "фото: удаление своих" on storage.objects for del
 -- ─── Уже зарегистрированные пользователи ────────────────────
 -- При повторном запуске файла профили пересоздаются для всех, кто уже входил.
 insert into profiles (id, name, handle)
-select u.id, split_part(u.email, '@', 1), 'user_' || left(replace(u.id::text, '-', ''), 12)
+select u.id, 'user_' || left(replace(u.id::text, '-', ''), 12), 'user_' || left(replace(u.id::text, '-', ''), 12)
 from auth.users u
 on conflict (id) do nothing;
 insert into folders (owner_id, name)

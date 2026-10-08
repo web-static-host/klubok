@@ -45,6 +45,17 @@ export function Avatar({ user, size = 32 }: { user: User; size?: number }) {
     .map((p) => p[0])
     .slice(0, 2)
     .join('')
+  if (user.avatar)
+    return (
+      <img
+        src={user.avatar}
+        alt=""
+        aria-hidden
+        loading="lazy"
+        className="shrink-0 rounded-full bg-elevated object-cover"
+        style={{ width: size, height: size }}
+      />
+    )
   return (
     <span
       aria-hidden

@@ -145,7 +145,7 @@ interface Verdict {
 }
 
 /** Ответ модели → объект; если модель отказалась отвечать (фильтр GigaChat) — это нарушение */
-async function gcAsk(system: string, user: string, attachments: string[] = []): Promise<Verdict> {
+async function gcAsk(system: string, user: string, attachments: string[] = [], allowPeopleNow = false): Promise<Verdict> {
   const res = await gcFetch(`${GC_API}/chat/completions`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${await gcToken()}`, 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -167,9 +167,9 @@ async function gcAsk(system: string, user: string, attachments: string[] = []): 
   if (!m) throw new Error(`GigaChat: непонятный ответ: ${content.slice(0, 200)}`)
   const v = JSON.parse(m[0])
   return {
-    ok: v.ok !== false && v.people !== true,
+    ok: v.ok !== false && !(v.people === true && !allowPeopleNow),
     reasons: [
-      ...(v.people === true ? ['На картинках не должно быть людей (руки в кадре можно)'] : []),
+      ...(v.people === true && !allowPeopleNow ? ['На картинках не должно быть людей (руки в кадре можно)'] : []),
       ...(Array.isArray(v.reasons) ? v.reasons.map(String) : []),
     ].filter((r, i, a) => r && a.indexOf(r) === i),
     tags: Array.isArray(v.tags) ? v.tags.map((t: unknown) => String(t).toLowerCase().trim()).filter(Boolean).slice(0, 20) : [],
@@ -199,7 +199,7 @@ async function aiCheckText(text: string): Promise<Verdict> {
   )
 }
 
-async function aiCheckImage(src: string): Promise<Verdict> {
+async function aiCheckImage(src: string, allowPeople = false): Promise<Verdict> {
   const img = await fetch(src)
   if (!img.ok) throw new Error(`не удалось скачать картинку ${src}`)
   const form = new FormData()
@@ -211,11 +211,16 @@ async function aiCheckImage(src: string): Promise<Verdict> {
   try {
     return await gcAsk(
       `Ты — модератор картинок. ${RULES}
-Отдельное правило: на картинках публикаций не должно быть людей — лиц, тел, фигур, селфи (руки в кадре можно; нарисованные схематичные человечки на инфографике — тоже можно).
+${
+        allowPeople
+          ? 'Это фото профиля (аватар): люди и лица на нём разрешены, остальные правила действуют. Поле people всегда false.'
+          : 'Отдельное правило: на картинках публикаций не должно быть людей — лиц, тел, фигур, селфи (руки в кадре можно; нарисованные схематичные человечки на инфографике — тоже можно).'
+      }
 Ответь только JSON без пояснений:
 {"ok": true или false, "people": true или false, "reasons": ["коротко по-русски, что нарушено"], "text": "весь текст с картинки дословно, или пусто", "tags": ["5–15 слов по-русски: что изображено, продукты, предметы, действия"], "description": "одно предложение: что на картинке"}`,
       'Проверь картинку по правилам и опиши её.',
       [id],
+      allowPeople,
     )
   } finally {
     gcFetch(`${GC_API}/files/${id}/delete`, { method: 'POST', headers: { Authorization: `Bearer ${await gcToken()}` } }).catch(() => {})
@@ -243,14 +248,14 @@ async function removeImages(imgs: ImgIn[]) {
 }
 
 /** Проверка текста и картинок. ИИ недоступен — остаются быстрые проверки, пост помечается как не проверенный ИИ */
-export async function moderate(texts: string[], images: ImgIn[]) {
+export async function moderate(texts: string[], images: ImgIn[], allowPeople = false) {
   const text = texts.filter(Boolean).join('\n')
   const reasons = quickTextCheck(text)
   if (reasons.length) return { ok: false, reasons, ai: false, tags: [] as string[], aiText: '' }
   try {
     const verdicts: Verdict[] = []
     if (text.trim()) verdicts.push(await aiCheckText(text))
-    for (const img of images) verdicts.push(await aiCheckImage(img.src)) // по очереди: у личного тарифа один поток
+    for (const img of images) verdicts.push(await aiCheckImage(img.src, allowPeople)) // по очереди: у личного тарифа один поток
     const bad = verdicts.flatMap((v) => (v.ok ? [] : v.reasons.length ? v.reasons : ['Содержимое нарушает правила']))
     // текст на картинках — тоже через быстрые проверки
     const imgText = verdicts.map((v) => v.text).join('\n')
@@ -268,6 +273,19 @@ export async function moderate(texts: string[], images: ImgIn[]) {
   }
 }
 
+/** Имя — любое (1–50 символов), ник — латиница, цифры и _ (3–30), уникальный */
+function profileErrors(name: string, handle: string): string[] {
+  const r: string[] = []
+  if (!name) r.push('Напишите имя или название')
+  if (!/^[a-z0-9_]{3,30}$/.test(handle)) r.push('Ник: от 3 до 30 латинских букв, цифр или _')
+  return r
+}
+
+async function handleTaken(handle: string, exceptId?: string) {
+  const { data } = await admin.from('profiles').select('id').eq('handle', handle).maybeSingle()
+  return !!data && data.id !== exceptId
+}
+
 const str = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ').slice(0, max) : '')
 
 async function handle(req: Request): Promise<Response> {
@@ -283,17 +301,28 @@ async function handle(req: Request): Promise<Response> {
     }
   }
 
-  const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
-  const { data: auth } = await admin.auth.getUser(jwt)
-  const uid = auth?.user?.id
-  if (!uid) return json({ ok: false, reasons: ['Нужно войти'] }, 401)
-
   let body: Record<string, unknown>
   try {
     body = await req.json()
   } catch {
     return json({ ok: false, reasons: ['Неверный запрос'] }, 400)
   }
+
+  // проверка имени и ника перед регистрацией (входа ещё нет)
+  if (body.action === 'check-profile') {
+    const name = str(body.name, 50)
+    const handle = str(body.handle, 30).toLowerCase()
+    const bad = profileErrors(name, handle)
+    if (bad.length) return json({ ok: false, reasons: bad })
+    if (await handleTaken(handle)) return json({ ok: false, reasons: ['Такой ник уже занят — придумайте другой'] })
+    const m = await moderate([name, handle], [])
+    return json(m.ok ? { ok: true } : { ok: false, reasons: m.reasons })
+  }
+
+  const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
+  const { data: auth } = await admin.auth.getUser(jwt)
+  const uid = auth?.user?.id
+  if (!uid) return json({ ok: false, reasons: ['Нужно войти'] }, 401)
 
   switch (body.action) {
     case 'post': {
@@ -364,13 +393,28 @@ async function handle(req: Request): Promise<Response> {
       const name = str(body.name, 50)
       const handle = str(body.handle, 30).toLowerCase()
       const bio = str(body.bio, 200)
-      const city = str(body.city, 50)
-      if (!name) return json({ ok: false, reasons: ['Напишите имя'] }, 400)
-      if (!/^[a-z0-9_]{3,30}$/.test(handle)) return json({ ok: false, reasons: ['Ник: от 3 до 30 латинских букв, цифр или _'] }, 400)
-      const m = await moderate([name, handle, bio, city], [])
-      if (!m.ok) return json({ ok: false, reasons: m.reasons })
-      const { data, error } = await admin.from('profiles').update({ name, handle, bio, city: city || null }).eq('id', uid).select().single()
-      if (error) return json({ ok: false, reasons: [error.code === '23505' ? 'Такой ник уже занят' : 'Не получилось сохранить'] }, error.code === '23505' ? 200 : 500)
+      // avatar: не передан — без изменений, null — убрать, { src, ratio } — новое фото (из своей папки)
+      const avatar = body.avatar as ImgIn | null | undefined
+      const bad = profileErrors(name, handle)
+      if (bad.length) return json({ ok: false, reasons: bad })
+      if (avatar && !ownImage(avatar, uid)) return json({ ok: false, reasons: ['Неверная картинка'] }, 400)
+      if (await handleTaken(handle, uid)) {
+        if (avatar) await removeImages([avatar])
+        return json({ ok: false, reasons: ['Такой ник уже занят — придумайте другой'] })
+      }
+      const m = await moderate([name, handle, bio], avatar ? [avatar] : [], true)
+      if (!m.ok) {
+        if (avatar) await removeImages([avatar])
+        return json({ ok: false, reasons: m.reasons })
+      }
+      const { data: before } = await admin.from('profiles').select('avatar_url').eq('id', uid).single()
+      const patch: Record<string, unknown> = { name, handle, bio }
+      if (avatar !== undefined) patch.avatar_url = avatar ? avatar.src : null
+      const { data, error } = await admin.from('profiles').update(patch).eq('id', uid).select().single()
+      if (error) return json({ ok: false, reasons: [error.code === '23505' ? 'Такой ник уже занят — придумайте другой' : 'Не получилось сохранить'] }, error.code === '23505' ? 200 : 500)
+      // старое фото больше не нужно
+      const old = before?.avatar_url as string | null
+      if (avatar !== undefined && old && old !== data.avatar_url && old.startsWith(`${PUBLIC_PREFIX}${uid}/`)) await removeImages([{ src: old, ratio: 1 }])
       return json({ ok: true, row: data })
     }
   }

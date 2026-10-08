@@ -2,13 +2,13 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App'
-import { finishEmailLogin } from './supabase'
+import { finishEmailLink } from './supabase'
 
 // сначала забираем вход из ссылки в письме (если пришли по ней), потом показываем сайт
-finishEmailLogin().then((loginError) =>
+finishEmailLink().then(({ error, recovery }) =>
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      <App loginError={loginError} />
+      <App linkError={error} recovery={recovery} />
     </StrictMode>,
   ),
 )

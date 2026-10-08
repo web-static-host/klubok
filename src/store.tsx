@@ -52,7 +52,15 @@ interface Store {
   savedIn: (postId: string) => Folder[]
   setTheme: (t: ThemeMode) => void
   /** вход: письмо со ссылкой; вернёт текст ошибки или null */
-  signIn: (email: string) => Promise<string | null>
+  /** вход, регистрация, «забыли пароль», новый пароль; вернут текст ошибки или null */
+  signIn: (email: string, password: string) => Promise<string | null>
+  /** 'confirm' — нужно подтвердить почту по письму */
+  signUp: (email: string, password: string) => Promise<string | 'confirm' | null>
+  resetPassword: (email: string) => Promise<string | null>
+  setPassword: (password: string) => Promise<string | null>
+  /** окно «Новый пароль» после ссылки из письма */
+  recoveryOpen: boolean
+  setRecoveryOpen: (v: boolean) => void
   signOut: () => Promise<void>
   /** изменить свой профиль; вернёт текст ошибки или null */
   updateProfile: (p: Pick<User, 'name' | 'handle' | 'bio' | 'city'>) => Promise<string | null>
@@ -151,6 +159,55 @@ function check<T extends { error: unknown }>(res: T): T {
   return res
 }
 
+/** Отказ проверки: причины — для показа пользователю */
+export class Rejected extends Error {
+  reasons: string[]
+  constructor(reasons: string[]) {
+    super(reasons.join('; '))
+    this.reasons = reasons
+  }
+}
+
+/** Всё, что пишут пользователи, уходит в серверную функцию publish: там проверка правил (в том числе ИИ) и запись в базу */
+async function publish(body: Record<string, unknown>): Promise<unknown> {
+  const { data, error } = await supabase.functions.invoke('publish', { body })
+  if (error) {
+    let reasons: string[] | undefined
+    try {
+      reasons = (await (error as { context?: Response }).context?.json())?.reasons
+    } catch {
+      /* ответа нет — нет связи */
+    }
+    throw new Rejected(reasons ?? ['Не получилось отправить. Проверьте интернет и попробуйте ещё раз.'])
+  }
+  if (!data?.ok) throw new Rejected(data?.reasons ?? ['Не получилось отправить'])
+  return data.row
+}
+
+/** Ошибки входа — по-русски */
+function authError(e: { code?: string; status?: number; message: string }): string {
+  switch (e.code) {
+    case 'invalid_credentials':
+      return 'Неверная почта или пароль'
+    case 'user_already_exists':
+    case 'email_exists':
+      return 'Эта почта уже зарегистрирована — войдите'
+    case 'weak_password':
+      return 'Пароль слишком простой: нужно не меньше 8 символов'
+    case 'email_not_confirmed':
+      return 'Почта не подтверждена — откройте ссылку из письма'
+    case 'email_address_invalid':
+      return 'Проверьте адрес почты'
+    case 'same_password':
+      return 'Новый пароль совпадает со старым'
+    case 'over_email_send_rate_limit':
+    case 'over_request_rate_limit':
+      return 'Слишком много попыток. Подождите немного и попробуйте снова'
+  }
+  if (e.status === 429) return 'Слишком много попыток. Подождите немного и попробуйте снова'
+  return 'Не получилось. Проверьте данные и попробуйте ещё раз'
+}
+
 function loadTheme(): ThemeMode {
   try {
     const t = localStorage.getItem('klubok.theme')
@@ -161,7 +218,16 @@ function loadTheme(): ThemeMode {
   return 'system'
 }
 
-export function StoreProvider({ children, initialNotice }: { children: ReactNode; initialNotice?: string | null }) {
+export function StoreProvider({
+  children,
+  initialNotice,
+  recovery,
+}: {
+  children: ReactNode
+  initialNotice?: string | null
+  /** пришли по ссылке «забыли пароль» */
+  recovery?: boolean
+}) {
   const [ready, setReady] = useState(false)
   const [failed, setFailed] = useState(false)
   const [attempt, setAttempt] = useState(0)
@@ -177,6 +243,7 @@ export function StoreProvider({ children, initialNotice }: { children: ReactNode
   const [likes, setLikes] = useState<string[]>([])
   const [theme, setThemeState] = useState<ThemeMode>(loadTheme)
   const [loginOpen, setLoginOpen] = useState(false)
+  const [recoveryOpen, setRecoveryOpen] = useState(!!recovery)
   const [notice, setNotice] = useState<string | null>(initialNotice ?? null)
 
   // кто вошёл: следим за входом и выходом
@@ -297,7 +364,7 @@ export function StoreProvider({ children, initialNotice }: { children: ReactNode
     return true
   }
 
-  /** Своё фото (data:URL) → файл в хранилище images/<id>/…; заглушки и готовые адреса — как есть */
+  /** Своё фото (data:URL) → файл в хранилище images/<id>/…; готовые адреса — как есть */
   const upload = async (img: Img): Promise<Img> => {
     if (!img.src?.startsWith('data:')) return img
     const blob = await (await fetch(img.src)).blob()
@@ -350,32 +417,21 @@ export function StoreProvider({ children, initialNotice }: { children: ReactNode
     addPost: async (data) => {
       if (!uid) throw new Error('not signed in')
       const images = await Promise.all(data.images.map(upload))
-      const res = await supabase
-        .from('posts')
-        .insert({ author_id: uid, type: data.type, topic: data.topic, title: data.title, images })
-        .select()
-        .single()
-      const p = toPost(check(res).data as PostRow)
+      const p = toPost((await publish({ action: 'post', type: data.type, topic: data.topic, title: data.title, images })) as PostRow)
       setPosts((ps) => [p, ...ps])
       return p.id
     },
     addTry: async (postId, ok, text, img) => {
       if (!uid) throw new Error('not signed in')
-      const res = await supabase
-        .from('tries')
-        .insert({ post_id: postId, user_id: uid, ok, text: text ?? null, img: img ? await upload(img) : null })
-        .select()
-        .single()
-      const t = toTry(check(res).data as TryRow)
-      setTries((ts) => [t, ...ts])
+      const row = await publish({ action: 'try', postId, ok, text: text ?? '', img: img ? await upload(img) : undefined })
+      setTries((ts) => [toTry(row as TryRow), ...ts])
     },
     addReply: async (tryId, text) => {
       if (!uid) {
         setLoginOpen(true)
         throw new Error('not signed in')
       }
-      const res = await supabase.from('try_replies').insert({ try_id: tryId, user_id: uid, text }).select().single()
-      const r = toReply(check(res).data as ReplyRow)
+      const r = toReply((await publish({ action: 'reply', tryId, text })) as ReplyRow)
       setReplies((rs) => [...rs, r])
     },
     saveTo: (fid, pid) => {
@@ -410,25 +466,41 @@ export function StoreProvider({ children, initialNotice }: { children: ReactNode
     },
     savedIn: (pid) => folders.filter((f) => f.postIds.includes(pid)),
     setTheme: setThemeState,
-    signIn: async (address) => {
-      const { error } = await supabase.auth.signInWithOtp({
+    signIn: async (address, password) => {
+      const { error } = await supabase.auth.signInWithPassword({ email: address, password })
+      return error ? authError(error) : null
+    },
+    signUp: async (address, password) => {
+      const { data, error } = await supabase.auth.signUp({
         email: address,
+        password,
         options: { emailRedirectTo: window.location.origin + window.location.pathname },
       })
-      if (!error) return null
-      if (error.status === 429) return 'Слишком много писем подряд. Подождите немного и попробуйте снова.'
-      return 'Не получилось отправить письмо. Проверьте адрес.'
+      if (error) return authError(error)
+      return data.session ? null : 'confirm'
     },
+    resetPassword: async (address) => {
+      const { error } = await supabase.auth.resetPasswordForEmail(address, {
+        redirectTo: window.location.origin + window.location.pathname,
+      })
+      return error ? authError(error) : null
+    },
+    setPassword: async (password) => {
+      const { error } = await supabase.auth.updateUser({ password })
+      return error ? authError(error) : null
+    },
+    recoveryOpen,
+    setRecoveryOpen,
     signOut: async () => {
       await supabase.auth.signOut()
     },
     updateProfile: async (p) => {
       if (!uid) return 'Нужно войти'
-      const { error } = await supabase
-        .from('profiles')
-        .update({ name: p.name, handle: p.handle, bio: p.bio, city: p.city || null })
-        .eq('id', uid)
-      if (error) return error.code === '23505' ? 'Такой ник уже занят' : 'Не получилось сохранить'
+      try {
+        await publish({ action: 'profile', ...p })
+      } catch (e) {
+        return e instanceof Rejected ? e.reasons.join('. ') : 'Не получилось сохранить'
+      }
       setUsers((us) => us.map((u) => (u.id === uid ? { ...u, ...p, city: p.city || undefined } : u)))
       return null
     },

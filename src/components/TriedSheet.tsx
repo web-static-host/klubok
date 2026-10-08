@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { Camera, ThumbsDown, ThumbsUp, X } from 'lucide-react'
 import type { Img } from '../data/types'
-import { useStore } from '../store'
+import { Rejected, useStore } from '../store'
 import { useUi } from '../ui-context'
 import { cx, fileToImg } from '../lib'
 import { Sheet } from './Sheet'
@@ -37,9 +37,13 @@ export function TriedSheet({ postId, onClose }: { postId: string | null; onClose
     setBusy(true)
     try {
       await addTry(postId, ok, text.trim() || undefined, img)
-    } catch {
+    } catch (e) {
       setBusy(false)
-      setErr('Не получилось отправить. Проверьте интернет и попробуйте ещё раз.')
+      setErr(
+        e instanceof Rejected
+          ? `Не отправлено: ${e.reasons.join('. ')}`
+          : 'Не получилось отправить. Проверьте интернет и попробуйте ещё раз.',
+      )
       return
     }
     setBusy(false)

@@ -1,9 +1,9 @@
 import { useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, ImagePlus, Plus, X } from 'lucide-react'
 import type { Img, Topic } from '../data/types'
 import { TOPICS } from '../data/types'
-import { useStore } from '../store'
+import { Rejected, useStore } from '../store'
 import { useUi } from '../ui-context'
 import { cx, fileToImg } from '../lib'
 import { Sheet } from './Sheet'
@@ -72,9 +72,13 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
       onClose()
       toast('Опубликовано')
       nav(`/p/${id}`)
-    } catch {
+    } catch (e) {
       setBusy(false)
-      setErr('Не получилось опубликовать. Проверьте интернет и попробуйте ещё раз.')
+      setErr(
+        e instanceof Rejected
+          ? `Не опубликовано: ${e.reasons.join('. ')}`
+          : 'Не получилось опубликовать. Проверьте интернет и попробуйте ещё раз.',
+      )
     }
   }
 
@@ -88,7 +92,12 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
         }}
       >
         <p className="text-sm leading-relaxed">
-          Вся идея — на картинках: шаги, состав, подсказки. Без людей в кадре (руки можно). До {MAX} картинок, их будут листать.
+          Вся идея — на картинках: шаги, состав, подсказки. Без людей в кадре (руки можно). До {MAX} картинок, их будут листать. Перед
+          публикацией всё проверяется по{' '}
+          <Link to="/rules" onClick={close} className="font-semibold text-accent hover:underline">
+            правилам
+          </Link>
+          .
         </p>
         {images.length === 0 ? (
           <button
@@ -223,7 +232,7 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
           </p>
         )}
         <Button type="submit" className="w-full" disabled={busy}>
-          {busy ? 'Публикуем…' : 'Опубликовать'}
+          {busy ? 'Проверяем и публикуем…' : 'Опубликовать'}
         </Button>
       </form>
     </Sheet>

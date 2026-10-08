@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, ImageOff, LogOut, MapPin, Monitor, Moon, Pencil, Sun } from 'lucide-react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import { ArrowLeft, ChevronRight, ImageOff, LogOut, MapPin, Monitor, Moon, Pencil, Sun } from 'lucide-react'
 import { useStore, type ThemeMode } from '../store'
 import { num, plural } from '../lib'
 import { Masonry } from '../components/Masonry'
@@ -24,7 +24,7 @@ export function Profile({ self }: { self?: boolean }) {
     return (
       <div className="mx-auto max-w-sm px-3 pt-10 md:pt-16">
         <h1 className="mb-3 text-2xl font-bold">Вход</h1>
-        <LoginForm hint="Войдите, чтобы публиковать идеи, сохранять их в папки и отмечать «Я попробовал». Пароль не нужен — пришлём ссылку на почту." />
+        <LoginForm hint="Войдите, чтобы публиковать идеи, сохранять их в папки и отмечать «Я попробовал»." />
         <ThemeSettings />
       </div>
     )
@@ -121,6 +121,9 @@ export function Profile({ self }: { self?: boolean }) {
       {mine && (
         <section className="mx-auto mt-10 max-w-xl px-1">
           <ThemeSettings />
+          <Link to="/rules" className="card mt-6 flex items-center justify-between px-4 py-3 text-sm font-semibold hover:bg-active">
+            Правила Клубка <ChevronRight size={18} />
+          </Link>
           <h2 className="section-label mt-6 mb-2">Аккаунт</h2>
           <div className="card flex items-center gap-3 p-4">
             <p className="min-w-0 flex-1 truncate text-sm">{s.email}</p>

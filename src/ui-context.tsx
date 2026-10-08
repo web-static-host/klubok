@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { SaveSheet } from './components/SaveSheet'
 import { TriedSheet } from './components/TriedSheet'
 import { CreateSheet } from './components/CreateSheet'
-import { LoginSheet } from './components/LoginSheet'
+import { LoginSheet, NewPasswordSheet } from './components/LoginSheet'
 import { useStore } from './store'
 
 /** Общие окна: «Сохранить в папку», «Я попробовал», «Создать», «Вход». Открываются из любого места; гостю — сначала вход. */
@@ -56,6 +56,7 @@ export function UiProvider({ children }: { children: ReactNode }) {
       <TriedSheet postId={tried} onClose={() => setTried(null)} />
       <CreateSheet open={create} onClose={() => setCreate(false)} />
       <LoginSheet />
+      <NewPasswordSheet />
       {toastText && (
         <div
           role="status"

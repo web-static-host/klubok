@@ -43,6 +43,8 @@ create table posts (
   -- что ИИ увидел на картинках: слова и описание (для поиска и проверки «без людей»), пользователям не видно
   ai_tags text[] not null default '{}',
   ai_text text,
+  -- проверено ли ИИ (если ИИ был недоступен — только быстрые проверки)
+  checked_by_ai boolean not null default false,
   likes_count int not null default 0,
   tries_count int not null default 0,
   tries_ok_count int not null default 0,
@@ -177,6 +179,8 @@ end $$;
 create trigger on_auth_user_created after insert on auth.users for each row execute function handle_new_user();
 
 -- ─── Доступ (RLS): читать могут все, менять — только своё ───
+-- Посты, отзывы, ответы и профиль пишутся только через серверную функцию publish (supabase/functions/publish):
+-- там проверка правил и ИИ. Поэтому прямых прав на запись в эти таблицы у сайта нет.
 alter table profiles enable row level security;
 alter table posts enable row level security;
 alter table tries enable row level security;
@@ -187,18 +191,11 @@ alter table likes enable row level security;
 alter table try_replies enable row level security;
 
 create policy "профили видны всем" on profiles for select using (true);
-create policy "свой профиль" on profiles for update to authenticated using (id = auth.uid()) with check (id = auth.uid());
 
 create policy "посты видны всем" on posts for select using (true);
-create policy "свой пост: создать" on posts for insert to authenticated with check (author_id = auth.uid());
-create policy "свой пост: изменить" on posts for update to authenticated using (author_id = auth.uid()) with check (author_id = auth.uid());
 create policy "свой пост: удалить" on posts for delete to authenticated using (author_id = auth.uid());
 
 create policy "попытки видны всем" on tries for select using (true);
--- у своего поста «Я попробовал» нажать нельзя
-create policy "своя попытка: создать" on tries for insert to authenticated
-  with check (user_id = auth.uid() and not exists (select 1 from posts p where p.id = post_id and p.author_id = auth.uid()));
-create policy "своя попытка: изменить" on tries for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
 create policy "своя попытка: удалить" on tries for delete to authenticated using (user_id = auth.uid());
 
 create policy "свои папки" on folders for all to authenticated using (owner_id = auth.uid()) with check (owner_id = auth.uid());
@@ -211,7 +208,6 @@ create policy "своя подписка: создать" on follows for insert 
 create policy "своя подписка: удалить" on follows for delete to authenticated using (follower_id = auth.uid());
 
 create policy "ответы видны всем" on try_replies for select using (true);
-create policy "свой ответ: создать" on try_replies for insert to authenticated with check (user_id = auth.uid());
 create policy "свой ответ: удалить" on try_replies for delete to authenticated using (user_id = auth.uid());
 
 create policy "лайки видны всем" on likes for select using (true);

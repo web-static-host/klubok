@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, BadgeCheck, Bookmark, ChefHat, CircleCheck, Heart, Link2, SearchX, ThumbsDown, ThumbsUp } from 'lucide-react'
 import type { Try } from '../data/types'
 import { topicLabel } from '../data/types'
-import { useStore } from '../store'
+import { Rejected, useStore } from '../store'
 import { useUi } from '../ui-context'
 import { cx, num, plural, timeAgo } from '../lib'
 import { Masonry } from '../components/Masonry'
@@ -249,8 +249,8 @@ function TryItem({ t, authorId }: { t: Try; authorId: string }) {
       setText('')
       setWriting(false)
       setOpen(true)
-    } catch {
-      setErr('Не получилось отправить. Попробуйте ещё раз.')
+    } catch (e) {
+      setErr(e instanceof Rejected ? `Не отправлено: ${e.reasons.join('. ')}` : 'Не получилось отправить. Попробуйте ещё раз.')
     }
     setBusy(false)
   }

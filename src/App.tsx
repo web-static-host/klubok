@@ -8,11 +8,12 @@ import { PostPage } from './pages/PostPage'
 import { FolderPage, Folders } from './pages/Folders'
 import { Profile } from './pages/Profile'
 import { Search } from './pages/Search'
+import { Rules } from './pages/Rules'
 
 // HashRouter: адреса вида /klubok/#/p/1 — работают на GitHub Pages без настройки сервера
-export default function App({ loginError }: { loginError: string | null }) {
+export default function App({ linkError, recovery }: { linkError: string | null; recovery: boolean }) {
   return (
-    <StoreProvider initialNotice={loginError}>
+    <StoreProvider initialNotice={linkError} recovery={recovery}>
       <HashRouter>
         <UiProvider>
           <Routes>
@@ -25,6 +26,7 @@ export default function App({ loginError }: { loginError: string | null }) {
               <Route path="u/:id" element={<Profile />} />
               <Route path="me" element={<Profile self />} />
               <Route path="search" element={<Search />} />
+              <Route path="rules" element={<Rules />} />
               <Route path="*" element={<Home />} />
             </Route>
           </Routes>

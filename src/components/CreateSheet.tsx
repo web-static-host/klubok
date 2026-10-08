@@ -31,9 +31,11 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
   const [topic, setTopic] = useState<Topic>('')
   const [own, setOwn] = useState('')
   const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const close = () => {
+    if (busy) return
     setImage(undefined)
     setCaption('')
     setTopic('')
@@ -42,7 +44,7 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
     onClose()
   }
 
-  const publish = () => {
+  const publish = async () => {
     if (!image) return setErr('Добавьте фото')
     if (!caption.trim()) return setErr('Напишите подпись')
     let t = topic
@@ -53,10 +55,21 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
       t = TOPICS.find((x) => x.label.toLowerCase() === name.toLowerCase())?.id ?? name[0].toUpperCase() + name.slice(1)
     }
     if (!t) return setErr('Выберите категорию')
-    const id = addPost({ type: 'photo', topic: t, ...splitCaption(caption), images: [image], tags: [] })
-    close()
-    toast('Опубликовано')
-    nav(`/p/${id}`)
+    setBusy(true)
+    try {
+      const id = await addPost({ topic: t, ...splitCaption(caption), images: [image] })
+      setBusy(false)
+      setImage(undefined)
+      setCaption('')
+      setTopic('')
+      setOwn('')
+      onClose()
+      toast('Опубликовано')
+      nav(`/p/${id}`)
+    } catch {
+      setBusy(false)
+      setErr('Не получилось опубликовать. Проверьте интернет и попробуйте ещё раз.')
+    }
   }
 
   return (
@@ -145,8 +158,8 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
             {err}
           </p>
         )}
-        <Button type="submit" className="w-full">
-          Опубликовать
+        <Button type="submit" className="w-full" disabled={busy}>
+          {busy ? 'Публикуем…' : 'Опубликовать'}
         </Button>
       </form>
     </Sheet>

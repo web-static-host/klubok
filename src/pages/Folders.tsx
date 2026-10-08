@@ -8,6 +8,7 @@ import { MobileTop } from '../components/Layout'
 import { Masonry } from '../components/Masonry'
 import { Sheet } from '../components/Sheet'
 import { Button, Empty, IconButton, Picture } from '../components/ui'
+import { LoginForm } from '../components/LoginSheet'
 
 /** Обложка папки — коллаж из трёх картинок (DESIGN_WEB 3.7) */
 export function FolderCard({ f }: { f: Folder }) {
@@ -79,7 +80,17 @@ export function NewFolderButton() {
 }
 
 export function Folders() {
-  const { folders } = useStore()
+  const { folders, authed } = useStore()
+  if (!authed)
+    return (
+      <>
+        <MobileTop title="Папки" />
+        <div className="mx-auto max-w-sm px-3 pt-4 md:pt-16">
+          <h1 className="mb-3 hidden text-2xl font-bold md:block">Мои папки</h1>
+          <LoginForm hint="Папки — ваши подборки идей: «Хочу приготовить», «Для дачи»… Войдите, чтобы их вести. Пароль не нужен — пришлём ссылку на почту." />
+        </div>
+      </>
+    )
   return (
     <>
       <MobileTop title="Папки" />

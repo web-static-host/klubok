@@ -1,9 +1,11 @@
-import { createContext, useContext, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { SaveSheet } from './components/SaveSheet'
 import { TriedSheet } from './components/TriedSheet'
 import { CreateSheet } from './components/CreateSheet'
+import { LoginSheet } from './components/LoginSheet'
+import { useStore } from './store'
 
-/** Общие окна: «Сохранить в папку», «Я попробовал», «Создать». Открываются из любого места. */
+/** Общие окна: «Сохранить в папку», «Я попробовал», «Создать», «Вход». Открываются из любого места; гостю — сначала вход. */
 interface Ui {
   openSave: (postId: string) => void
   openTried: (postId: string) => void
@@ -18,17 +20,33 @@ export function UiProvider({ children }: { children: ReactNode }) {
   const [create, setCreate] = useState(false)
   const [toastText, setToastText] = useState<string | null>(null)
 
+  const { authed, setLoginOpen, notice, clearNotice } = useStore()
+
   const toast = (text: string) => {
     setToastText(text)
-    window.setTimeout(() => setToastText((t) => (t === text ? null : t)), 2600)
+    window.setTimeout(() => setToastText((t) => (t === text ? null : t)), 3200)
   }
 
+  // сообщения стора (ошибки сохранения, вход по ссылке) — всплывашкой
+  useEffect(() => {
+    if (!notice) return
+    setToastText(notice)
+    clearNotice()
+    window.setTimeout(() => setToastText((t) => (t === notice ? null : t)), 4000)
+  }, [notice, clearNotice])
+
+  const guard =
+    <A extends unknown[]>(fn: (...a: A) => void) =>
+    (...a: A) =>
+      authed ? fn(...a) : setLoginOpen(true)
+
   return (
-    <Ctx.Provider value={{ openSave: setSave, openTried: setTried, openCreate: () => setCreate(true), toast }}>
+    <Ctx.Provider value={{ openSave: guard(setSave), openTried: guard(setTried), openCreate: guard(() => setCreate(true)), toast }}>
       {children}
       <SaveSheet postId={save} onClose={() => setSave(null)} />
       <TriedSheet postId={tried} onClose={() => setTried(null)} />
       <CreateSheet open={create} onClose={() => setCreate(false)} />
+      <LoginSheet />
       {toastText && (
         <div
           role="status"

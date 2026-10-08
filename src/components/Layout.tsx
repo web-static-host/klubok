@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { Folder, Plus, Search, Sparkles, User as UserIcon, Users, type LucideIcon } from 'lucide-react'
+import { Folder, LogIn, Plus, RotateCcw, Search, Sparkles, User as UserIcon, Users, WifiOff, type LucideIcon } from 'lucide-react'
 import { useStore } from '../store'
 import { useUi } from '../ui-context'
 import { cx } from '../lib'
-import { Avatar, Button, Logo } from './ui'
+import { Avatar, Button, Empty, Logo } from './ui'
 
 const TABS: { to: string; label: string; icon: LucideIcon; end?: boolean }[] = [
   { to: '/', label: 'Для вас', icon: Sparkles, end: true },
@@ -40,7 +40,7 @@ function SearchBox({ className }: { className?: string }) {
 
 /** Шапка для компьютера — DESIGN_WEB 2 */
 function Header() {
-  const { me } = useStore()
+  const { me, authed, setLoginOpen } = useStore()
   const { openCreate } = useUi()
   return (
     <header className="glass sticky top-0 z-40 hidden border-x-0 border-t-0 md:block">
@@ -70,9 +70,15 @@ function Header() {
         <Button size="sm" icon={Plus} onClick={openCreate} className="shrink-0">
           Создать
         </Button>
-        <Link to="/me" className="shrink-0 rounded-full" aria-label="Мой профиль">
-          <Avatar user={me} size={36} />
-        </Link>
+        {authed ? (
+          <Link to="/me" className="shrink-0 rounded-full" aria-label="Мой профиль">
+            <Avatar user={me} size={36} />
+          </Link>
+        ) : (
+          <Button size="sm" kind="secondary" icon={LogIn} onClick={() => setLoginOpen(true)} className="shrink-0">
+            Войти
+          </Button>
+        )}
       </div>
     </header>
   )
@@ -143,7 +149,33 @@ export function MobileTop({ title }: { title?: string }) {
   )
 }
 
+/** Пока грузятся данные — пульсирующие плитки; нет связи — кнопка «Повторить» */
+function Loading() {
+  const { failed, retry } = useStore()
+  if (failed)
+    return (
+      <div className="flex flex-col items-center">
+        <Empty icon={WifiOff}>Не удалось загрузить идеи. Проверьте интернет.</Empty>
+        <Button kind="secondary" size="sm" icon={RotateCcw} onClick={retry}>
+          Повторить
+        </Button>
+      </div>
+    )
+  return (
+    <div
+      className="grid grid-cols-2 gap-2 px-2 pt-16 sm:grid-cols-3 md:px-4 md:pt-16 lg:grid-cols-5 lg:px-6"
+      aria-label="Загрузка"
+      role="status"
+    >
+      {[1.3, 1, 1.4, 1.1, 1.2, 0.9, 1.3, 1, 1.2, 1.4].map((r, i) => (
+        <div key={i} className="animate-pulse rounded-2xl bg-elevated" style={{ aspectRatio: `1 / ${r}` }} />
+      ))}
+    </div>
+  )
+}
+
 export function Layout() {
+  const { ready } = useStore()
   return (
     <>
       <a
@@ -154,7 +186,7 @@ export function Layout() {
       </a>
       <Header />
       <main id="main" className="mx-auto max-w-[1600px] pb-32 md:pb-12">
-        <Outlet />
+        {ready ? <Outlet /> : <Loading />}
       </main>
       <BottomNav />
     </>

@@ -20,6 +20,6 @@
 ## Код
 - Vite + React + TypeScript + Tailwind v4, иконки `lucide-react`, маршруты `HashRouter`.
 - Токены цветов — CSS-переменные в `src/index.css`.
-- Состояние прототипа — `src/store.tsx` (localStorage). Функции стора потом заменятся запросами к API.
+- Данные — база Supabase (`supabase/schema.sql`), все запросы — в `src/store.tsx`. Тема — в localStorage.
 - Перед коммитом: `npx tsc -b && npm run build`. Форматирование: `npx prettier --write "src/**/*.{ts,tsx}"`.
 - Публикация — автоматически из ветки `main` через GitHub Actions.

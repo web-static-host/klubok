@@ -10,9 +10,9 @@ import { Profile } from './pages/Profile'
 import { Search } from './pages/Search'
 
 // HashRouter: адреса вида /klubok/#/p/1 — работают на GitHub Pages без настройки сервера
-export default function App() {
+export default function App({ loginError }: { loginError: string | null }) {
   return (
-    <StoreProvider>
+    <StoreProvider initialNotice={loginError}>
       <HashRouter>
         <UiProvider>
           <Routes>

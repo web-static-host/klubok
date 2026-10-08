@@ -12,7 +12,7 @@ const SUGGEST = ['сырники', 'хранение', 'дача', 'выпечк
 export function Search() {
   const [params] = useSearchParams()
   const q = (params.get('q') ?? '').trim().toLowerCase()
-  const { posts, users, user } = useStore()
+  const { posts, users, user, me } = useStore()
 
   const found = q
     ? posts.filter((p) =>
@@ -22,7 +22,7 @@ export function Search() {
           .includes(q),
       )
     : []
-  const people = q ? users.filter((u) => u.id !== 'me' && (u.name + ' ' + u.handle).toLowerCase().includes(q)) : []
+  const people = q ? users.filter((u) => u.id !== me.id && (u.name + ' ' + u.handle).toLowerCase().includes(q)) : []
 
   return (
     <div className="px-2 pt-3 sm:px-3 md:px-4 md:pt-6 lg:px-6">

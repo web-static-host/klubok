@@ -15,10 +15,12 @@ export function TriedSheet({ postId, onClose }: { postId: string | null; onClose
   const [text, setText] = useState('')
   const [img, setImg] = useState<Img | undefined>()
   const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
   const file = useRef<HTMLInputElement>(null)
   const p = postId ? post(postId) : undefined
 
   const close = () => {
+    if (busy) return
     setOk(null)
     setText('')
     setImg(undefined)
@@ -26,15 +28,26 @@ export function TriedSheet({ postId, onClose }: { postId: string | null; onClose
     onClose()
   }
 
-  const submit = () => {
+  const submit = async () => {
     if (!postId) return
     if (ok === null) {
       setErr('Выберите результат: получилось или нет')
       return
     }
-    addTry(postId, ok, text.trim() || undefined, img)
+    setBusy(true)
+    try {
+      await addTry(postId, ok, text.trim() || undefined, img)
+    } catch {
+      setBusy(false)
+      setErr('Не получилось отправить. Проверьте интернет и попробуйте ещё раз.')
+      return
+    }
+    setBusy(false)
+    setOk(null)
+    setText('')
+    setImg(undefined)
+    onClose()
     toast(ok ? 'Отлично! Ваш результат добавлен' : 'Спасибо, это поможет другим')
-    close()
   }
 
   return (
@@ -128,8 +141,8 @@ export function TriedSheet({ postId, onClose }: { postId: string | null; onClose
         className="card w-full resize-none px-4 py-3 text-base outline-none placeholder:text-muted"
       />
 
-      <Button className="mt-4 w-full" onClick={submit}>
-        Отправить
+      <Button className="mt-4 w-full" onClick={submit} disabled={busy}>
+        {busy ? 'Отправляем…' : 'Отправить'}
       </Button>
     </Sheet>
   )

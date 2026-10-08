@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, ImageOff, MapPin, Monitor, Moon, RotateCcw, Sun } from 'lucide-react'
+import { ArrowLeft, ImageOff, LogOut, MapPin, Monitor, Moon, Pencil, Sun } from 'lucide-react'
 import { useStore, type ThemeMode } from '../store'
 import { num, plural } from '../lib'
 import { Masonry } from '../components/Masonry'
 import { Avatar, Button, Empty, IconButton, Segmented } from '../components/ui'
+import { Sheet } from '../components/Sheet'
+import { LoginForm } from '../components/LoginSheet'
 import { FolderCard, NewFolderButton } from './Folders'
 
 type Tab = 'posts' | 'folders' | 'tried'
@@ -14,14 +16,24 @@ export function Profile({ self }: { self?: boolean }) {
   const nav = useNavigate()
   const s = useStore()
   const u = self ? s.me : s.user(id)
-  const mine = u.id === s.me.id
+  const mine = s.authed && u.id === s.me.id
   const [tab, setTab] = useState<Tab>('posts')
+  const [editing, setEditing] = useState(false)
+
+  if (self && !s.authed)
+    return (
+      <div className="mx-auto max-w-sm px-3 pt-10 md:pt-16">
+        <h1 className="mb-3 text-2xl font-bold">Вход</h1>
+        <LoginForm hint="Войдите, чтобы публиковать идеи, сохранять их в папки и отмечать «Я попробовал». Пароль не нужен — пришлём ссылку на почту." />
+        <ThemeSettings />
+      </div>
+    )
 
   const posts = s.posts.filter((p) => p.authorId === u.id).sort((a, b) => b.createdAt - a.createdAt)
   const triedIds = [...new Set(s.tries.filter((t) => t.userId === u.id).map((t) => t.postId))]
   const triedPosts = triedIds.map((pid) => s.post(pid)).filter((p) => !!p)
   const repeated = s.tries.filter((t) => posts.some((p) => p.id === t.postId)).length
-  const followers = u.followers + (!mine && s.follows.includes(u.id) ? 1 : 0)
+  const followers = u.followers
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'posts', label: 'Публикации' },
@@ -58,6 +70,11 @@ export function Profile({ self }: { self?: boolean }) {
             </div>
           ))}
         </dl>
+        {mine && (
+          <Button className="mt-4 w-full max-w-sm" kind="neutral" icon={Pencil} onClick={() => setEditing(true)}>
+            Изменить профиль
+          </Button>
+        )}
         {!mine && (
           <Button
             className="mt-4 w-full max-w-sm"
@@ -102,38 +119,103 @@ export function Profile({ self }: { self?: boolean }) {
       </div>
 
       {mine && (
-        <section className="mx-auto mt-10 max-w-xl px-1" aria-labelledby="settings-h">
-          <h2 id="settings-h" className="section-label mb-2">
-            Внешний вид
-          </h2>
-          <Segmented<ThemeMode>
-            value={s.theme}
-            onChange={s.setTheme}
-            options={[
-              { id: 'system', label: 'Системная', icon: Monitor },
-              { id: 'light', label: 'Светлая', icon: Sun },
-              { id: 'dark', label: 'Тёмная', icon: Moon },
-            ]}
-          />
-          <h2 className="section-label mt-6 mb-2">Тестовая версия</h2>
-          <div className="card p-4">
-            <p className="text-sm leading-relaxed">
-              Это прототип: данные хранятся только в этом браузере. Картинки — временные заглушки со стоков.
-            </p>
-            <Button
-              kind="neutral"
-              size="sm"
-              icon={RotateCcw}
-              className="mt-3"
-              onClick={() => {
-                if (confirm('Вернуть тестовые данные? Ваши публикации и отметки удалятся.')) s.reset()
-              }}
-            >
-              Сбросить тестовые данные
+        <section className="mx-auto mt-10 max-w-xl px-1">
+          <ThemeSettings />
+          <h2 className="section-label mt-6 mb-2">Аккаунт</h2>
+          <div className="card flex items-center gap-3 p-4">
+            <p className="min-w-0 flex-1 truncate text-sm">{s.email}</p>
+            <Button kind="neutral" size="sm" icon={LogOut} onClick={() => s.signOut()}>
+              Выйти
             </Button>
           </div>
         </section>
       )}
+      {mine && editing && <EditProfile onClose={() => setEditing(false)} />}
     </div>
+  )
+}
+
+function ThemeSettings() {
+  const s = useStore()
+  return (
+    <>
+      <h2 className="section-label mt-6 mb-2">Внешний вид</h2>
+      <Segmented<ThemeMode>
+        value={s.theme}
+        onChange={s.setTheme}
+        options={[
+          { id: 'system', label: 'Системная', icon: Monitor },
+          { id: 'light', label: 'Светлая', icon: Sun },
+          { id: 'dark', label: 'Тёмная', icon: Moon },
+        ]}
+      />
+    </>
+  )
+}
+
+const field = 'card w-full px-4 py-3 text-base outline-none placeholder:text-muted'
+
+function EditProfile({ onClose }: { onClose: () => void }) {
+  const { me, updateProfile } = useStore()
+  const [name, setName] = useState(me.name)
+  const [handle, setHandle] = useState(me.handle)
+  const [bio, setBio] = useState(me.bio)
+  const [city, setCity] = useState(me.city ?? '')
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+  return (
+    <Sheet open onClose={onClose} title="Профиль">
+      <form
+        className="flex flex-col gap-3"
+        onSubmit={async (e) => {
+          e.preventDefault()
+          if (!name.trim()) return setErr('Напишите имя')
+          if (!/^[a-z0-9_]{3,30}$/.test(handle)) return setErr('Ник: от 3 до 30 латинских букв, цифр или _')
+          setBusy(true)
+          const error = await updateProfile({ name: name.trim(), handle, bio: bio.trim(), city: city.trim() })
+          setBusy(false)
+          if (error) setErr(error)
+          else onClose()
+        }}
+      >
+        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={50} placeholder="Имя" aria-label="Имя" className={field} />
+        <div className="card flex items-center px-4">
+          <span className="text-base text-muted">@</span>
+          <input
+            value={handle}
+            onChange={(e) => setHandle(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+            maxLength={30}
+            placeholder="ник"
+            aria-label="Ник"
+            className="min-w-0 flex-1 bg-transparent py-3 text-base outline-none placeholder:text-muted"
+          />
+        </div>
+        <textarea
+          value={bio}
+          onChange={(e) => setBio(e.target.value)}
+          rows={3}
+          maxLength={200}
+          placeholder="О себе"
+          aria-label="О себе"
+          className={`${field} resize-none`}
+        />
+        <input
+          value={city}
+          onChange={(e) => setCity(e.target.value)}
+          maxLength={50}
+          placeholder="Город"
+          aria-label="Город"
+          className={field}
+        />
+        {err && (
+          <p className="rounded-xl bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-500" role="alert">
+            {err}
+          </p>
+        )}
+        <Button type="submit" disabled={busy}>
+          {busy ? 'Сохраняем…' : 'Сохранить'}
+        </Button>
+      </form>
+    </Sheet>
   )
 }

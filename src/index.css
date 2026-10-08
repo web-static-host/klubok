@@ -1,0 +1,196 @@
+@import '@fontsource-variable/manrope';
+@import 'tailwindcss';
+
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+/* Токены — design-system/design-tokens.json (вариант без размытия для карточек) */
+:root {
+  --bg: #f5f7fa;
+  --surface: #ffffff;
+  --surface-glass: rgba(255, 255, 255, 0.85);
+  --surface-strong: rgba(255, 255, 255, 0.95);
+  --elevated: rgba(15, 23, 42, 0.08);
+  --active: rgba(20, 184, 166, 0.14);
+  --text: #0f172a;
+  --text-muted: #64748b;
+  --border: rgba(15, 23, 42, 0.12);
+  --border-strong: rgba(15, 23, 42, 0.22);
+  --glow-top: rgba(20, 184, 166, 0.12);
+  --glow-br: rgba(6, 182, 212, 0.06);
+  --input: #ffffff;
+  --scrim: rgba(0, 0, 0, 0.4);
+  color-scheme: light;
+}
+[data-theme='dark'] {
+  --bg: #070d12;
+  --surface: #0f1b23;
+  --surface-glass: rgba(15, 27, 35, 0.8);
+  --surface-strong: rgba(10, 18, 25, 0.92);
+  --elevated: #16252c;
+  --active: rgba(20, 184, 166, 0.18);
+  --text: #f1f5f9;
+  --text-muted: #94a3b8;
+  --border: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --glow-top: rgba(20, 184, 166, 0.15);
+  --glow-br: rgba(6, 182, 212, 0.08);
+  --input: #1a2530;
+  --scrim: rgba(0, 0, 0, 0.55);
+  color-scheme: dark;
+}
+
+@theme {
+  --font-sans: 'Manrope Variable', system-ui, sans-serif;
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-glass: var(--surface-glass);
+  --color-strong: var(--surface-strong);
+  --color-elevated: var(--elevated);
+  --color-active: var(--active);
+  --color-ink: var(--text);
+  --color-muted: var(--text-muted);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-accent: #14b8a6;
+  --color-accent-dark: #0891b2;
+  --color-danger: #ef4444;
+  --color-star: #facc15;
+  --ease-soft: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-feature-settings: 'cv11', 'ss01';
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+body {
+  min-height: 100dvh;
+  background-image:
+    radial-gradient(80% 50% at 50% -10%, var(--glow-top), transparent 70%),
+    radial-gradient(60% 40% at 100% 100%, var(--glow-br), transparent 70%);
+  background-attachment: fixed;
+}
+
+:focus-visible {
+  outline: 2px solid #14b8a6;
+  outline-offset: 2px;
+  border-radius: 12px;
+}
+
+@layer components {
+  .grad {
+    background-image: linear-gradient(135deg, #14b8a6, #0891b2);
+    color: #fff;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+  }
+  .glass {
+    background: var(--surface-glass);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+  }
+  .glass-strong {
+    background: var(--surface-strong);
+    border: 1px solid var(--border-strong);
+    backdrop-filter: blur(32px) saturate(180%);
+    -webkit-backdrop-filter: blur(32px) saturate(180%);
+  }
+  .press {
+    transition:
+      transform 150ms ease,
+      background-color 200ms ease,
+      opacity 200ms ease;
+  }
+  .press:active {
+    transform: scale(0.96);
+    transition-duration: 100ms;
+  }
+  .section-label {
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding-left: 4px;
+  }
+  .chip-on {
+    background: var(--active);
+    border-color: rgba(45, 212, 191, 0.3);
+  }
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes sheetUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.fade-up {
+  animation: fadeUp 400ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.scale-in {
+  animation: scaleIn 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.sheet-up {
+  animation: sheetUp 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@media (min-width: 768px) {
+  .sheet-up {
+    animation: scaleIn 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+}
+.fade-in {
+  animation: fadeIn 200ms ease both;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}

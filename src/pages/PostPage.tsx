@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, BadgeCheck, Bookmark, ChefHat, CircleCheck, Heart, Link2, SearchX, ThumbsDown, ThumbsUp } from 'lucide-react'
-import type { Try } from '../data/types'
+import type { AiMeta, Try } from '../data/types'
 import { topicLabel } from '../data/types'
 import { Rejected, useStore } from '../store'
 import { useUi } from '../ui-context'
@@ -113,14 +113,15 @@ export function PostPage() {
             {showAi && (
               <div className="card mb-3 p-3 text-xs leading-relaxed">
                 <p className="font-semibold">{p.ai?.checked ? 'Проверено ИИ' : 'ИИ не проверял (тестовый пост или ИИ был недоступен)'}</p>
-                {!!p.ai?.tags.length && (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {p.ai.tags.map((t) => (
-                      <span key={t} className="rounded-full border border-line bg-surface px-2 py-0.5 font-semibold">
-                        {t}
-                      </span>
-                    ))}
-                  </div>
+                {p.ai?.meta ? (
+                  <AiMetaView m={p.ai.meta} />
+                ) : (
+                  !!p.ai?.tags.length && (
+                    <>
+                      <p className="mt-2 text-muted">Старая проверка — подробной раскладки нет, только слова:</p>
+                      <Words list={p.ai.tags} />
+                    </>
+                  )
                 )}
                 {p.ai?.text && (
                   <details className="mt-2">
@@ -387,5 +388,51 @@ function TryItem({ t, authorId }: { t: Try; authorId: string }) {
         </form>
       )}
     </li>
+  )
+}
+
+// ТЕСТ: раскладка идеи от ИИ — убрать вместе с кнопкой «Теги ИИ»
+function Words({ list }: { list: string[] }) {
+  return (
+    <div className="mt-1 flex flex-wrap gap-1.5">
+      {list.map((t) => (
+        <span key={t} className="rounded-full border border-line bg-surface px-2 py-0.5 font-semibold">
+          {t}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+const META_ROWS: [keyof AiMeta, string][] = [
+  ['idea', 'Идея'],
+  ['kind', 'Вид'],
+  ['main', 'Главное'],
+  ['techniques', 'Способы'],
+  ['tools', 'Инструменты'],
+  ['occasion', 'Повод, время, место'],
+  ['style', 'Характер, стиль'],
+  ['related', 'Похожие темы (для рекомендаций)'],
+  ['difficulty', 'Сложность'],
+  ['time', 'Время'],
+]
+
+function AiMetaView({ m }: { m: AiMeta }) {
+  return (
+    <dl className="mt-2 grid gap-2">
+      {META_ROWS.map(([k, label]) => {
+        const v = m[k]
+        const list = (Array.isArray(v) ? v : [v]).filter(Boolean)
+        if (!list.length) return null
+        return (
+          <div key={k}>
+            <dt className="text-muted">{label}</dt>
+            <dd>
+              <Words list={list} />
+            </dd>
+          </div>
+        )
+      })}
+    </dl>
   )
 }

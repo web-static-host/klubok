@@ -39,7 +39,21 @@ export interface Post {
   /** скрытые слова для поиска (свои и от ИИ); на сайте не показываются */
   tags: string[]
   /** ТЕСТ: что увидел ИИ — показывается кнопкой «Теги ИИ» на странице поста; убрать после тестов */
-  ai?: { tags: string[]; text: string; checked: boolean }
+  ai?: { tags: string[]; text: string; checked: boolean; meta: AiMeta | null }
+}
+
+/** ТЕСТ: подробная раскладка идеи от ИИ (основа будущих рекомендаций) */
+export interface AiMeta {
+  idea: string
+  kind: string
+  main: string[]
+  techniques: string[]
+  tools: string[]
+  occasion: string[]
+  style: string[]
+  related: string[]
+  difficulty: string
+  time: string
 }
 
 export interface Try {

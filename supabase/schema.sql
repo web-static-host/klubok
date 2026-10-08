@@ -42,6 +42,8 @@ create table posts (
   -- что ИИ увидел на картинках: слова и описание (для поиска и проверки «без людей»), пользователям не видно
   ai_tags text[] not null default '{}',
   ai_text text,
+  -- подробная раскладка идеи от ИИ (для поиска и рекомендаций): idea, kind, main, techniques, tools, occasion, style, related, difficulty, time
+  ai_meta jsonb,
   -- проверено ли ИИ (если ИИ был недоступен — только быстрые проверки)
   checked_by_ai boolean not null default false,
   likes_count int not null default 0,
@@ -105,6 +107,7 @@ create table image_checks (
   ok boolean not null,
   reasons text[] not null default '{}',
   tags text[] not null default '{}',
+  meta jsonb,
   ai_text text,
   by_ai boolean not null default false,
   created_at timestamptz not null default now()

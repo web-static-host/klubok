@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import type { Folder, Img, Post, PostType, Reply, Topic, Try, User } from './data/types'
+import type { AiMeta, Folder, Img, Post, PostType, Reply, Topic, Try, User } from './data/types'
 import { canonical, supabase } from './supabase'
 
 /**
@@ -101,6 +101,7 @@ interface PostRow {
   tags: string[]
   ai_tags: string[]
   ai_text: string | null
+  ai_meta: AiMeta | null
   checked_by_ai: boolean
   likes_count: number
   created_at: string
@@ -134,7 +135,7 @@ const toPost = (r: PostRow): Post => ({
   images: r.images,
   likes: r.likes_count,
   tags: [...r.tags, ...(r.ai_tags ?? [])],
-  ai: { tags: r.ai_tags ?? [], text: r.ai_text ?? '', checked: !!r.checked_by_ai },
+  ai: { tags: r.ai_tags ?? [], text: r.ai_text ?? '', checked: !!r.checked_by_ai, meta: r.ai_meta ?? null },
 })
 interface ReplyRow {
   id: string

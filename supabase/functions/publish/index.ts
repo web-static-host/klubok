@@ -149,10 +149,89 @@ async function gcToken() {
   return token.value
 }
 
+/**
+ * Что изображено — разложено по полочкам (одинаково для рецептов, лайфхаков, интерьеров, рукоделия, сада…).
+ * На этом строятся поиск и будущие рекомендации.
+ */
+export interface Meta {
+  /** идея одной фразой: «креветки в сливочном соусе», «органайзер для проводов из прищепок» */
+  idea: string
+  /** вид: рецепт, лайфхак, интерьер, рукоделие… (см. KINDS) */
+  kind: string
+  /** главное, без чего идеи нет: креветки, сливки; пряжа, спицы; полка, доска */
+  main: string[]
+  /** способы и действия: жарка на сковороде, вязание спицами, покраска */
+  techniques: string[]
+  /** нужные инструменты и техника: сковорода, духовка, дрель */
+  tools: string[]
+  /** повод, время, место: ужин, на скорую руку, праздничный стол, дача, маленькая квартира, лето */
+  occasion: string[]
+  /** характер и стиль: сливочное, острое, постное; скандинавский, минимализм */
+  style: string[]
+  /** общие темы для рекомендаций: морепродукты, блюда на сковороде, хранение на кухне */
+  related: string[]
+  difficulty: '' | 'легко' | 'средне' | 'сложно'
+  time: '' | 'быстро' | 'около часа' | 'долго'
+}
+const LISTS = ['main', 'techniques', 'tools', 'occasion', 'style', 'related'] as const
+const KINDS = [
+  'рецепт', 'выпечка', 'десерт', 'напиток', 'заготовки', 'лайфхак', 'уборка', 'хранение', 'интерьер', 'ремонт',
+  'своими руками', 'рукоделие', 'вязание', 'шитьё', 'декор', 'праздник', 'подарок', 'сад и огород', 'комнатные растения',
+  'для детей', 'питомцы', 'другое',
+]
+/** Есть почти везде — для поиска и рекомендаций бесполезно */
+const STOP = new Set([
+  'соль', 'перец', 'черный перец', 'чёрный перец', 'соль и перец', 'вода', 'сахар', 'масло', 'растительное масло', 'подсолнечное масло',
+  'мука', 'специи', 'приправы', 'приправа', 'зелень', 'посуда', 'тарелка', 'миска', 'ложка', 'вилка', 'нож', 'руки', 'рука', 'стол',
+  'картинка', 'изображение', 'фото', 'фотография', 'текст', 'инструкция', 'пошаговая инструкция', 'схема', 'инфографика', 'идея',
+  'еда', 'блюдо', 'продукты', 'ингредиенты', 'рецепт приготовления', 'по вкусу',
+])
+const norm = (v: unknown) => String(v ?? '').toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim()
+const list = (v: unknown, max: number) =>
+  [...new Set((Array.isArray(v) ? v : []).map(norm).filter((t) => t && t.length <= 60 && !STOP.has(t)))].slice(0, max)
+
+export function parseMeta(v: Record<string, unknown>): Meta {
+  const kind = norm(v.kind)
+  const difficulty = norm(v.difficulty)
+  const time = norm(v.time)
+  return {
+    idea: norm(v.idea).slice(0, 80),
+    kind: KINDS.find((k) => norm(k) === kind) ?? (kind ? 'другое' : ''),
+    main: list(v.main, 6),
+    techniques: list(v.techniques, 4),
+    tools: list(v.tools, 4),
+    occasion: list(v.occasion, 4),
+    style: list(v.style, 3),
+    related: list(v.related, 6),
+    difficulty: (['легко', 'средне', 'сложно'] as const).find((x) => x === difficulty) ?? '',
+    time: (['быстро', 'около часа', 'долго'] as const).find((x) => time.startsWith(x)) ?? '',
+  }
+}
+export const emptyMeta = (): Meta => parseMeta({})
+
+/** Несколько картинок одной идеи → одна раскладка: идея и вид — с первой картинки, где они есть, списки — вместе */
+export function mergeMeta(metas: Meta[]): Meta {
+  const m = emptyMeta()
+  for (const x of metas) {
+    m.idea ||= x.idea
+    m.kind ||= x.kind
+    m.difficulty ||= x.difficulty
+    m.time ||= x.time
+    for (const k of LISTS) m[k] = [...new Set([...m[k], ...x[k]])]
+  }
+  for (const k of LISTS) m[k] = m[k].slice(0, k === 'main' || k === 'related' ? 10 : 6)
+  return m
+}
+
+/** Плоский список для поиска: всё из раскладки, без повторов и «есть везде» */
+export function metaTags(m: Meta): string[] {
+  return [...new Set([m.idea, m.kind, ...LISTS.flatMap((k) => m[k])].filter((t) => t && !STOP.has(t)))].slice(0, 40)
+}
+
 interface Verdict {
   ok: boolean
   reasons: string[]
-  tags: string[]
+  meta: Meta
   text: string
   description: string
 }
@@ -174,7 +253,7 @@ async function gcAsk(system: string, user: string, attachments: string[] = [], a
   if (!res.ok) throw new Error(`GigaChat: ошибка запроса (${res.status}) ${(await res.text()).slice(0, 200)}`)
   const data = await res.json()
   const choice = data.choices?.[0]
-  if (choice?.finish_reason === 'blacklist') return { ok: false, reasons: ['Содержимое нарушает правила'], tags: [], text: '', description: '' }
+  if (choice?.finish_reason === 'blacklist') return { ok: false, reasons: ['Содержимое нарушает правила'], meta: emptyMeta(), text: '', description: '' }
   const content: string = choice?.message?.content ?? ''
   const m = content.match(/\{[\s\S]*\}/)
   if (!m) throw new Error(`GigaChat: непонятный ответ: ${content.slice(0, 200)}`)
@@ -185,7 +264,7 @@ async function gcAsk(system: string, user: string, attachments: string[] = [], a
       ...(v.people === true && !allowPeopleNow ? ['На картинках не должно быть людей (руки в кадре можно)'] : []),
       ...(Array.isArray(v.reasons) ? v.reasons.map(String) : []),
     ].filter((r, i, a) => r && a.indexOf(r) === i),
-    tags: Array.isArray(v.tags) ? v.tags.map((t: unknown) => String(t).toLowerCase().trim()).filter(Boolean).slice(0, 20) : [],
+    meta: parseMeta(v),
     text: typeof v.text === 'string' ? v.text.slice(0, 4000) : '',
     description: typeof v.description === 'string' ? v.description.slice(0, 500) : '',
   }
@@ -230,8 +309,21 @@ ${
           : 'Отдельное правило: на картинках публикаций не должно быть людей. people = true ТОЛЬКО если явно видно лицо человека или человеческая фигура/тело (на фото или реалистичном рисунке). НЕ люди: руки и пальцы, еда, посуда, предметы, растения, животные, иконки, схемы, нарисованные человечки-значки. Если сомневаешься — people = false.'
       }
 ok = false ставь только при явном нарушении правил; рецепты, инструкции, инфографика с текстом и цифрами — это нормально.
+Ещё разложи, что за идея на картинке (это нужно для поиска и рекомендаций; одинаково для любых картинок — рецептов, лайфхаков, интерьеров, рукоделия, сада). Слова — по-русски, строчными, в начальной форме.
+В main, techniques, tools НЕ пиши то, что есть почти в любой такой идее: соль, перец, вода, сахар, масло, мука, специи, зелень, посуда, руки. Только то, что отличает именно эту идею.
 Ответь только JSON без пояснений:
-{"ok": true или false, "people": true или false, "reasons": ["коротко по-русски, что нарушено"], "text": "весь текст с картинки дословно, или пусто", "tags": ["5–15 слов по-русски: что изображено, продукты, предметы, действия"], "description": "одно предложение: что на картинке"}`,
+{"ok": true или false, "people": true или false, "reasons": ["коротко по-русски, что нарушено"],
+ "text": "весь текст с картинки дословно, или пусто", "description": "одно предложение: что на картинке",
+ "idea": "идея одной фразой, 2–6 слов: «креветки в сливочном соусе», «органайзер для проводов из прищепок», «спальня в скандинавском стиле»",
+ "kind": "одно из: ${KINDS.join(', ')}",
+ "main": ["2–6 главных объектов, без которых идеи нет"],
+ "techniques": ["1–4 способа и действия: жарка на сковороде, тушение, вязание спицами, покраска, пересадка"],
+ "tools": ["0–4 нужных инструмента и техники: сковорода, духовка, мультиварка, дрель, швейная машина"],
+ "occasion": ["0–4 повод, время, место: ужин, завтрак, на скорую руку, праздничный стол, дача, маленькая квартира, лето"],
+ "style": ["0–3 характер и стиль: сливочное, острое, постное, вегетарианское, полезное; скандинавский, минимализм, винтаж"],
+ "related": ["3–6 общих тем, по которым человеку можно посоветовать похожее: морепродукты, блюда на сковороде, ужин за 30 минут, хранение на кухне"],
+ "difficulty": "легко, средне или сложно",
+ "time": "быстро, около часа или долго"}`,
       'Проверь картинку по правилам и опиши её.',
       [id],
       allowPeople,
@@ -271,7 +363,7 @@ async function removeImages(imgs: ImgIn[]) {
 interface ImageCheck {
   ok: boolean
   reasons: string[]
-  tags: string[]
+  meta: Meta
   aiText: string
   ai: boolean
 }
@@ -284,8 +376,9 @@ async function checkImage(img: ImgIn, uid: string, allowPeople: boolean): Promis
   const path = img.src.slice(PUBLIC_PREFIX.length)
   const { data: saved } = await admin.from('image_checks').select('*').eq('path', path).maybeSingle()
   // проверка «без людей» годится и для аватара; проверка аватара для поста — нет
-  if (saved && saved.user_id === uid && saved.by_ai && (saved.strict || allowPeople))
-    return { ok: saved.ok, reasons: saved.reasons ?? [], tags: saved.tags ?? [], aiText: saved.ai_text ?? '', ai: true }
+  // старые проверки без раскладки (meta) — проверяем заново
+  if (saved && saved.user_id === uid && saved.by_ai && saved.meta && (saved.strict || allowPeople))
+    return { ok: saved.ok, reasons: saved.reasons ?? [], meta: parseMeta(saved.meta), aiText: saved.ai_text ?? '', ai: true }
   let res: ImageCheck
   try {
     const v = await aiCheckImage(img.src, allowPeople)
@@ -293,13 +386,13 @@ async function checkImage(img: ImgIn, uid: string, allowPeople: boolean): Promis
     res = {
       ok: reasons.length === 0,
       reasons: [...new Set(reasons)],
-      tags: v.tags,
+      meta: v.meta,
       aiText: [v.description, v.text].filter(Boolean).join('. '),
       ai: true,
     }
   } catch (e) {
     console.error('ИИ недоступен:', e instanceof Error ? e.message : e)
-    return { ok: true, reasons: [], tags: [], aiText: '', ai: false }
+    return { ok: true, reasons: [], meta: emptyMeta(), aiText: '', ai: false }
   }
   await admin.from('image_checks').upsert({
     path,
@@ -307,7 +400,8 @@ async function checkImage(img: ImgIn, uid: string, allowPeople: boolean): Promis
     strict: !allowPeople,
     ok: res.ok,
     reasons: res.reasons,
-    tags: res.tags,
+    tags: metaTags(res.meta),
+    meta: res.meta,
     ai_text: res.aiText || null,
     by_ai: true,
   })
@@ -332,7 +426,7 @@ async function checkTexts(texts: string[]): Promise<{ ok: boolean; reasons: stri
 /** Тексты + картинки. Картинки по очереди: у личного тарифа GigaChat один поток */
 export async function moderate(texts: string[], images: ImgIn[], uid: string, allowPeople = false) {
   const t = await checkTexts(texts)
-  if (!t.ok) return { ok: false, reasons: t.reasons, ai: t.ai, tags: [] as string[], aiText: '' }
+  if (!t.ok) return { ok: false, reasons: t.reasons, ai: t.ai, tags: [] as string[], meta: emptyMeta(), aiText: '' }
   const checks: ImageCheck[] = []
   for (const img of images) checks.push(await checkImage(img, uid, allowPeople))
   const reasons = checks.flatMap((c, i) => (c.ok ? [] : c.reasons.map((r) => (images.length > 1 ? `Картинка ${i + 1}: ${r}` : r))))
@@ -340,7 +434,10 @@ export async function moderate(texts: string[], images: ImgIn[], uid: string, al
     ok: reasons.length === 0,
     reasons,
     ai: t.ai && checks.every((c) => c.ai),
-    tags: [...new Set(checks.flatMap((c) => c.tags))].slice(0, 40),
+    ...(() => {
+      const meta = mergeMeta(checks.map((c) => c.meta))
+      return { meta, tags: metaTags(meta) }
+    })(),
     aiText: checks.map((c) => c.aiText).filter(Boolean).join('\n'),
   }
 }
@@ -429,6 +526,7 @@ async function handle(req: Request): Promise<Response> {
           title,
           images: images.map((i) => ({ src: i.src, ratio: Number(i.ratio) })),
           ai_tags: m.tags,
+          ai_meta: m.meta,
           ai_text: m.aiText || null,
           checked_by_ai: m.ai,
         })

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, ImagePlus, Plus, X } from 'lucide-react'
 import type { Img, Topic } from '../data/types'
@@ -27,6 +27,43 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const [dragOver, setDragOver] = useState(false)
+
+  /** Картинки из выбора файла, перетаскивания или вставки (Ctrl+V) */
+  const addFiles = async (list: File[]) => {
+    const pics = list.filter((f) => f.type.startsWith('image/'))
+    if (!pics.length) return setErr('Можно добавлять только картинки')
+    const room = MAX - images.length
+    if (room <= 0) return setErr(`Не больше ${MAX} картинок`)
+    const added = await Promise.all(pics.slice(0, room).map((f) => fileToImg(f, 1400)))
+    setImages((a) => [...a, ...added].slice(0, MAX))
+    setErr(pics.length > room ? `Добавлено ${room}: больше ${MAX} картинок нельзя` : '')
+  }
+  const addRef = useRef(addFiles)
+  useEffect(() => {
+    addRef.current = addFiles
+  })
+
+  // пока окно открыто: картинку, брошенную мимо, браузер не открывает; Ctrl+V вставляет картинку
+  useEffect(() => {
+    if (!open) return
+    const stop = (e: DragEvent) => e.preventDefault()
+    const paste = (e: ClipboardEvent) => {
+      const files = [...(e.clipboardData?.files ?? [])]
+      if (files.some((f) => f.type.startsWith('image/'))) {
+        e.preventDefault()
+        addRef.current(files)
+      }
+    }
+    window.addEventListener('dragover', stop)
+    window.addEventListener('drop', stop)
+    window.addEventListener('paste', paste)
+    return () => {
+      window.removeEventListener('dragover', stop)
+      window.removeEventListener('drop', stop)
+      window.removeEventListener('paste', paste)
+    }
+  }, [open])
 
   const reset = () => {
     setImages([])
@@ -87,6 +124,18 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
     <Sheet open={open} onClose={close} title="Новая идея" wide>
       <form
         className="flex flex-col gap-4"
+        onDragEnter={(e) => {
+          if (e.dataTransfer.types.includes('Files')) setDragOver(true)
+        }}
+        onDragOver={(e) => e.preventDefault()}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false)
+        }}
+        onDrop={(e) => {
+          e.preventDefault()
+          setDragOver(false)
+          addFiles([...e.dataTransfer.files])
+        }}
         onSubmit={(e) => {
           e.preventDefault()
           publish()
@@ -100,14 +149,19 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
-            className="press flex aspect-[4/3] w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-line-strong text-sm font-semibold hover:bg-active"
+            className={cx(
+              'press flex aspect-[4/3] w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed text-sm font-semibold hover:bg-active',
+              dragOver ? 'border-accent bg-accent/10' : 'border-line-strong',
+            )}
           >
             <ImagePlus size={32} strokeWidth={1.8} />
-            Загрузить картинки
-            <span className="text-xs font-normal text-muted">Можно выбрать несколько сразу</span>
+            {dragOver ? 'Отпустите, чтобы добавить' : 'Загрузить картинки'}
+            <span className="px-4 text-center text-xs font-normal text-muted">
+              Перетащите сюда, вставьте (Ctrl+V) или нажмите, чтобы выбрать. Можно несколько сразу
+            </span>
           </button>
         ) : (
-          <div className="grid grid-cols-3 gap-2">
+          <div className={cx('grid grid-cols-3 gap-2 rounded-2xl', dragOver && 'outline-2 outline-offset-4 outline-accent outline-dashed')}>
             {images.map((im, i) => (
               <div key={i} className="relative">
                 <img src={im.src} alt={`Картинка ${i + 1}`} className="aspect-[3/4] w-full rounded-xl bg-elevated object-contain" />
@@ -166,13 +220,10 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
           accept="image/*"
           multiple
           hidden
-          onChange={async (e) => {
-            const files = [...(e.target.files ?? [])].slice(0, MAX - images.length)
+          onChange={(e) => {
+            const files = [...(e.target.files ?? [])]
             e.target.value = ''
-            if (!files.length) return
-            const added = await Promise.all(files.map((f) => fileToImg(f, 1400)))
-            setImages((a) => [...a, ...added].slice(0, MAX))
-            setErr('')
+            if (files.length) addFiles(files)
           }}
         />
 

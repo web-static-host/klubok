@@ -2,12 +2,13 @@ import { useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Camera, ChevronRight, ImageOff, LogOut, Monitor, Moon, Pencil, Sun } from 'lucide-react'
 import { useStore, type ThemeMode } from '../store'
-import { fileToSquare, num, plural } from '../lib'
+import { num, plural } from '../lib'
 import type { Img } from '../data/types'
 import { Masonry } from '../components/Masonry'
 import { Avatar, Button, Empty, IconButton, Segmented } from '../components/ui'
 import { Sheet } from '../components/Sheet'
 import { LoginForm } from '../components/LoginSheet'
+import { AvatarCropper } from '../components/AvatarCropper'
 import { FolderCard, NewFolderButton } from './Folders'
 
 type Tab = 'posts' | 'folders' | 'tried'
@@ -164,6 +165,7 @@ function EditProfile({ onClose }: { onClose: () => void }) {
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
   const file = useRef<HTMLInputElement>(null)
+  const [cropFile, setCropFile] = useState<File | null>(null)
   const shown = avatar === undefined ? me : { ...me, avatar: avatar?.src }
   return (
     <Sheet open onClose={onClose} title="Профиль">
@@ -201,10 +203,10 @@ function EditProfile({ onClose }: { onClose: () => void }) {
             type="file"
             accept="image/*"
             hidden
-            onChange={async (e) => {
+            onChange={(e) => {
               const f = e.target.files?.[0]
               e.target.value = ''
-              if (f) setAvatar(await fileToSquare(f))
+              if (f) setCropFile(f)
             }}
           />
         </div>
@@ -245,6 +247,14 @@ function EditProfile({ onClose }: { onClose: () => void }) {
           {busy ? 'Проверяем и сохраняем…' : 'Сохранить'}
         </Button>
       </form>
+      <AvatarCropper
+        file={cropFile}
+        onCancel={() => setCropFile(null)}
+        onDone={(img) => {
+          setAvatar(img)
+          setCropFile(null)
+        }}
+      />
     </Sheet>
   )
 }

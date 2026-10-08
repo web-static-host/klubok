@@ -54,22 +54,4 @@ export function fileToImg(file: File, maxW = 900): Promise<Img> {
   })
 }
 
-/** Фото профиля: квадрат из середины картинки, 192×192 (маленький файл — грузится быстро) */
-export function fileToSquare(file: File, size = 192): Promise<Img> {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file)
-    const image = new Image()
-    image.onerror = reject
-    image.onload = () => {
-      const side = Math.min(image.width, image.height)
-      const c = document.createElement('canvas')
-      c.width = c.height = size
-      c.getContext('2d')!.drawImage(image, (image.width - side) / 2, (image.height - side) / 2, side, side, 0, 0, size, size)
-      URL.revokeObjectURL(url)
-      resolve({ src: c.toDataURL('image/jpeg', 0.82), ratio: 1 })
-    }
-    image.src = url
-  })
-}
-
 export const cx = (...a: (string | false | null | undefined)[]) => a.filter(Boolean).join(' ')

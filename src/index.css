@@ -75,6 +75,22 @@ body {
   background-attachment: fixed;
 }
 
+/* всё, что нажимается, — курсор «рука» (Tailwind по умолчанию оставляет стрелку у кнопок) */
+@layer base {
+  button:not(:disabled),
+  [role='button'],
+  [role='radio'],
+  label:has(input[type='checkbox']),
+  input[type='checkbox'],
+  input[type='radio'],
+  summary {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+}
+
 :focus-visible {
   outline: 2px solid #14b8a6;
   outline-offset: 2px;

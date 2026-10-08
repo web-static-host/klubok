@@ -20,6 +20,12 @@ export function Sheet({
   wide?: boolean
 }) {
   const panel = useRef<HTMLDivElement>(null)
+  // onClose часто новая функция на каждое нажатие клавиши — храним последнюю, а не перезапускаем окно
+  // (иначе окно заново забирает фокус и курсор слетает с поля ввода)
+  const closeRef = useRef(onClose)
+  useEffect(() => {
+    closeRef.current = onClose
+  })
 
   useEffect(() => {
     if (!open) return
@@ -28,7 +34,7 @@ export function Sheet({
       if (e.key !== 'Escape') return
       // окно поверх окна (например, правила поверх входа): закрывается только верхнее
       const dialogs = document.querySelectorAll('[role="dialog"]')
-      if (dialogs[dialogs.length - 1] === panel.current) onClose()
+      if (dialogs[dialogs.length - 1] === panel.current) closeRef.current()
     }
     document.addEventListener('keydown', onKey)
     const overflow = document.body.style.overflow
@@ -39,7 +45,7 @@ export function Sheet({
       document.body.style.overflow = overflow
       prev?.focus?.()
     }
-  }, [open, onClose])
+  }, [open])
 
   if (!open) return null
   return createPortal(

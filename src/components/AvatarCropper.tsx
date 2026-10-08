@@ -73,6 +73,10 @@ export function AvatarCropper({ file, onCancel, onDone }: { file: File | null; o
   const pts = useRef(new Map<number, { x: number; y: number }>())
   const start = useRef<{ view: View; px: number; py: number; d: number } | null>(null)
   const lastTap = useRef(0)
+  const cancelRef = useRef(onCancel)
+  useEffect(() => {
+    cancelRef.current = onCancel
+  })
 
   // диаметр круга — по размеру свободного места
   const D = Math.max(120, Math.min(stage.w, stage.h, 420) - 32)
@@ -136,7 +140,7 @@ export function AvatarCropper({ file, onCancel, onDone }: { file: File | null; o
   useEffect(() => {
     if (!file) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel()
+      if (e.key === 'Escape') cancelRef.current()
     }
     document.addEventListener('keydown', onKey)
     const overflow = document.body.style.overflow
@@ -145,7 +149,7 @@ export function AvatarCropper({ file, onCancel, onDone }: { file: File | null; o
       document.removeEventListener('keydown', onKey)
       document.body.style.overflow = overflow
     }
-  }, [file, onCancel])
+  }, [file])
 
   const zoomTo = (s: number) => setView((v) => fit({ x: (v.x * s) / v.s, y: (v.y * s) / v.s, s }))
 

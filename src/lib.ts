@@ -1,8 +1,9 @@
 import type { Img } from './data/types'
+import { viaApi } from './supabase'
 
 /** Адрес картинки: файл в хранилище Supabase или только что выбранное фото (data:URL) */
 export function imgSrc(img: Img): string {
-  return img.src ?? ''
+  return viaApi(img.src ?? '')
 }
 
 export function plural(n: number, one: string, few: string, many: string) {

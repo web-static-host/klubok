@@ -252,6 +252,13 @@ interface ImgIn {
 }
 
 /** Картинка должна лежать в хранилище сайта, в папке этого пользователя (никаких чужих адресов) */
+/** …/storage/v1/object/public/images/… на любом адресе → тот же файл на адресе Supabase */
+function canon(img: ImgIn): ImgIn {
+  const src = typeof img?.src === 'string' ? img.src : ''
+  const i = src.indexOf('/storage/v1/object/public/images/')
+  return i < 0 ? img : { ...img, src: SB_URL + src.slice(i) }
+}
+
 function ownImage(img: ImgIn | undefined, uid: string): img is ImgIn {
   return !!img && typeof img.src === 'string' && img.src.startsWith(`${PUBLIC_PREFIX}${uid}/`) && Number(img.ratio) > 0 && Number(img.ratio) < 10
 }
@@ -388,6 +395,10 @@ async function handle(req: Request): Promise<Response> {
   const { data: auth } = await admin.auth.getUser(jwt)
   const uid = auth?.user?.id
   if (!uid) return json({ ok: false, reasons: ['Нужно войти'] }, 401)
+
+  // адреса картинок могут прийти через проброс (российский сервер) — приводим к адресу Supabase
+  for (const k of ['img', 'avatar'] as const) if (body[k] && typeof body[k] === 'object') body[k] = canon(body[k] as ImgIn)
+  if (Array.isArray(body.images)) body.images = (body.images as ImgIn[]).map(canon)
 
   switch (body.action) {
     // проверка картинки сразу после загрузки (в фоне, пока человек заполняет остальное)

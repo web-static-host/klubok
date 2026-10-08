@@ -3,6 +3,7 @@ import { type LucideIcon } from 'lucide-react'
 import type { Img, Topic, User } from '../data/types'
 import { topicLabel } from '../data/types'
 import { cx, imgSrc } from '../lib'
+import { viaApi } from '../supabase'
 
 export function Picture({
   img,
@@ -48,7 +49,7 @@ export function Avatar({ user, size = 32 }: { user: User; size?: number }) {
   if (user.avatar)
     return (
       <img
-        src={user.avatar}
+        src={viaApi(user.avatar)}
         alt=""
         aria-hidden
         loading="lazy"

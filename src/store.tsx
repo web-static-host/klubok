@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { Folder, Img, Post, PostType, Reply, Topic, Try, User } from './data/types'
-import { supabase } from './supabase'
+import { canonical, supabase } from './supabase'
 
 /**
  * Состояние сайта. Данные — в базе Supabase, тема оформления — в браузере.
@@ -375,7 +375,7 @@ export function StoreProvider({
     const blob = await (await fetch(img.src)).blob()
     const path = `${uid}/${crypto.randomUUID()}.jpg`
     check(await supabase.storage.from('images').upload(path, blob, { contentType: 'image/jpeg' }))
-    return { src: supabase.storage.from('images').getPublicUrl(path).data.publicUrl, ratio: img.ratio }
+    return { src: canonical(supabase.storage.from('images').getPublicUrl(path).data.publicUrl), ratio: img.ratio }
   }
 
   const value: Store = {

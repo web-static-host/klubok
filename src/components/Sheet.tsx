@@ -39,7 +39,7 @@ export function Sheet({
   if (!open) return null
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center md:items-center md:p-6">
-      <div className="fade-in absolute inset-0 bg-[var(--scrim)]" onClick={onClose} />
+      <div className="fade-in absolute inset-0 bg-[var(--scrim)] backdrop-blur-md" onClick={onClose} />
       <div
         ref={panel}
         tabIndex={-1}

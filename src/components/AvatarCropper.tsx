@@ -1,30 +1,32 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react'
-import { createPortal } from 'react-dom'
-import { Check, FlipHorizontal2, RotateCcwSquare, X } from 'lucide-react'
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react'
+import { FlipHorizontal2, RotateCcwSquare } from 'lucide-react'
 import type { Img } from '../data/types'
 import { cx } from '../lib'
+import { Sheet } from './Sheet'
+import { Button, Segmented } from './ui'
 
 /** Итоговый аватар — квадрат OUT×OUT (маленький файл — грузится быстро) */
 const OUT = 256
-const MAX_ZOOM = 8
+/** Самая маленькая рамка, px на экране */
+const MIN_BOX = 48
 /** Линейка наклона: пикселей на градус */
-const PX_PER_DEG = 8
+const PX_PER_DEG = 6
+const PAD = 12
 
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v))
 const rad = (d: number) => (d * Math.PI) / 180
 
-interface View {
-  /** смещение центра фото от центра круга, px экрана */
+interface Box {
   x: number
   y: number
-  /** масштаб: px экрана на 1 px фото */
-  s: number
+  size: number
 }
 interface Adjust {
   brightness: number
   contrast: number
   saturation: number
 }
+type Handle = 'nw' | 'ne' | 'sw' | 'se' | 'move'
 const NO_ADJUST: Adjust = { brightness: 0, contrast: 0, saturation: 0 }
 
 /** Ползунки −100…100 → множители как у CSS-фильтров */
@@ -41,12 +43,9 @@ function applyAdjust(ctx: CanvasRenderingContext2D, a: Adjust) {
   const d = ctx.getImageData(0, 0, OUT, OUT)
   const px = d.data
   for (let i = 0; i < px.length; i += 4) {
-    let r = px[i] * b
-    let g = px[i + 1] * b
-    let bl = px[i + 2] * b
-    r = (r - 128) * c + 128
-    g = (g - 128) * c + 128
-    bl = (bl - 128) * c + 128
+    const r = (px[i] * b - 128) * c + 128
+    const g = (px[i + 1] * b - 128) * c + 128
+    const bl = (px[i + 2] * b - 128) * c + 128
     const l = 0.2126 * r + 0.7152 * g + 0.0722 * bl
     px[i] = l + (r - l) * s
     px[i + 1] = l + (g - l) * s
@@ -56,55 +55,25 @@ function applyAdjust(ctx: CanvasRenderingContext2D, a: Adjust) {
 }
 
 /**
- * Редактор фото профиля как в Telegram: круг поверх фото, двигать и увеличивать (пальцами, мышью, колёсиком),
- * выровнять наклон по линейке, повернуть на 90°, отразить; вкладка «Цвет» — яркость, контраст, насыщенность.
+ * Редактор фото профиля (окно поверх профиля): фото целиком, поверх — квадратная рамка с кругом.
+ * Рамку двигают и растягивают за углы (или колёсиком / двумя пальцами), можно выровнять наклон,
+ * повернуть на 90°, отразить; вкладка «Цвет» — яркость, контраст, насыщенность.
  */
 export function AvatarCropper({ file, onCancel, onDone }: { file: File | null; onCancel: () => void; onDone: (img: Img) => void }) {
   const [img, setImg] = useState<HTMLImageElement | null>(null)
-  const [stage, setStage] = useState({ w: 0, h: 0 })
-  const [view, setView] = useState<View>({ x: 0, y: 0, s: 1 })
+  const [stageW, setStageW] = useState(0)
+  const [box, setBox] = useState<Box | null>(null)
   const [rot90, setRot90] = useState(0)
   const [tilt, setTilt] = useState(0)
   const [flip, setFlip] = useState(false)
   const [adjust, setAdjust] = useState<Adjust>(NO_ADJUST)
   const [tab, setTab] = useState<'crop' | 'color'>('crop')
-  const [dragging, setDragging] = useState(false)
+  const [active, setActive] = useState<Handle | null>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const pts = useRef(new Map<number, { x: number; y: number }>())
-  const start = useRef<{ view: View; px: number; py: number; d: number } | null>(null)
-  const lastTap = useRef(0)
-  const cancelRef = useRef(onCancel)
-  useEffect(() => {
-    cancelRef.current = onCancel
-  })
+  const start = useRef<{ box: Box; px: number; py: number; d: number; mode: Handle } | null>(null)
 
-  // диаметр круга — по размеру свободного места
-  const D = Math.max(120, Math.min(stage.w, stage.h, 420) - 32)
-  const r = D / 2
-  const angle = rad(tilt - rot90 * 90)
-  const W = img?.width ?? 1
-  const H = img?.height ?? 1
-  const sMin = D / Math.min(W, H)
-
-  /** круг всегда закрыт фото: ограничиваем масштаб и сдвиг (с учётом поворота) */
-  const fit = useCallback(
-    (v: View, a = angle): View => {
-      const s = clamp(v.s, sMin, sMin * MAX_ZOOM)
-      const cos = Math.cos(a)
-      const sin = Math.sin(a)
-      // центр круга в координатах фото
-      let lx = (-v.x * cos - v.y * sin) / s
-      let ly = (v.x * sin - v.y * cos) / s
-      const mx = Math.max(0, W / 2 - r / s)
-      const my = Math.max(0, H / 2 - r / s)
-      lx = clamp(lx, -mx, mx)
-      ly = clamp(ly, -my, my)
-      return { s, x: -s * (lx * cos - ly * sin), y: -s * (lx * sin + ly * cos) }
-    },
-    [angle, sMin, W, H, r],
-  )
-
-  // загрузка файла
+  // загрузка файла — всё с начала
   useEffect(() => {
     if (!file) return
     const url = URL.createObjectURL(file)
@@ -116,81 +85,107 @@ export function AvatarCropper({ file, onCancel, onDone }: { file: File | null; o
       setFlip(false)
       setAdjust(NO_ADJUST)
       setTab('crop')
-      setView({ x: 0, y: 0, s: 0 }) // уточнится в fit, когда известен размер круга
+      setBox(null)
     }
     image.src = url
     return () => URL.revokeObjectURL(url)
   }, [file])
 
-  // размер области под фото
+  // ширина области под фото
   useLayoutEffect(() => {
     const el = stageRef.current
     if (!el) return
-    const ro = new ResizeObserver(() => setStage({ w: el.clientWidth, h: el.clientHeight }))
+    const ro = new ResizeObserver(() => setStageW(el.clientWidth))
     ro.observe(el)
     return () => ro.disconnect()
-  }, [img])
+  }, [img, file])
 
-  // после смены размера, поворота или загрузки — снова закрыть круг
-  useEffect(() => {
-    if (img && stage.w) setView((v) => fit(v))
-  }, [img, stage.w, stage.h, fit])
+  // ─── геометрия: фото (с поворотом на 90°) вписано в область целиком ───
+  const W = img?.width ?? 1
+  const H = img?.height ?? 1
+  const side = rot90 % 2 === 1
+  const Wr = side ? H : W
+  const Hr = side ? W : H
+  const stageH = Math.round(Math.min(stageW * 0.85, 400)) || 320
+  const f = Math.min((stageW - 2 * PAD) / Wr, (stageH - 2 * PAD) / Hr) || 1
+  const dw = Wr * f
+  const dh = Hr * f
+  const R = { x: (stageW - dw) / 2, y: (stageH - dh) / 2, w: dw, h: dh }
+  // наклон: фото чуть увеличивается, чтобы без пустых углов закрывать ту же область
+  const t = Math.abs(rad(tilt))
+  const k = Math.max((dw * Math.cos(t) + dh * Math.sin(t)) / dw, (dw * Math.sin(t) + dh * Math.cos(t)) / dh)
+  const angle = rad(tilt - rot90 * 90)
 
-  // Esc — отмена, Enter — готово; страница под редактором не прокручивается
-  useEffect(() => {
-    if (!file) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') cancelRef.current()
-    }
-    document.addEventListener('keydown', onKey)
-    const overflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = overflow
-    }
-  }, [file])
+  /** рамка не выходит за фото и не меньше MIN_BOX */
+  const fitBox = (bx: Box): Box => {
+    const size = clamp(bx.size, Math.min(MIN_BOX, R.w, R.h), Math.min(R.w, R.h))
+    return { size, x: clamp(bx.x, R.x, R.x + R.w - size), y: clamp(bx.y, R.y, R.y + R.h - size) }
+  }
+  const fullBox = (): Box => {
+    const size = Math.min(R.w, R.h)
+    return { size, x: R.x + (R.w - size) / 2, y: R.y + (R.h - size) / 2 }
+  }
 
-  const zoomTo = (s: number) => setView((v) => fit({ x: (v.x * s) / v.s, y: (v.y * s) / v.s, s }))
+  // новая картинка, поворот на 90° или другой размер окна — рамка снова по центру во всю ширину
+  const key = `${img?.src}|${stageW}|${rot90}`
+  const [boxKey, setBoxKey] = useState('')
+  if (img && stageW && key !== boxKey) {
+    setBoxKey(key)
+    setBox(fullBox())
+  }
+  const b = box ?? fullBox()
 
-  const snapshot = () => {
+  const local = (e: { clientX: number; clientY: number }) => {
+    const r = stageRef.current!.getBoundingClientRect()
+    return { x: e.clientX - r.left, y: e.clientY - r.top }
+  }
+
+  const snapshot = (mode: Handle) => {
     const p = [...pts.current.values()]
     const mid = p.length === 2 ? { x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2 } : p[0]
-    start.current = { view, px: mid.x, py: mid.y, d: p.length === 2 ? Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) : 0 }
+    start.current = { box: b, px: mid.x, py: mid.y, d: p.length === 2 ? Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) : 0, mode }
   }
+
   const down = (e: PointerEvent) => {
+    e.preventDefault()
     e.currentTarget.setPointerCapture(e.pointerId)
-    pts.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
-    snapshot()
-    setDragging(true)
+    pts.current.set(e.pointerId, local(e))
+    const mode = ((e.target as HTMLElement).dataset.handle as Handle | undefined) ?? 'move'
+    snapshot(pts.current.size === 2 ? 'move' : mode)
+    setActive(mode)
   }
+
   const move = (e: PointerEvent) => {
     if (!pts.current.has(e.pointerId) || !start.current) return
-    pts.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    pts.current.set(e.pointerId, local(e))
     const p = [...pts.current.values()]
     const st = start.current
+    const s0 = st.box
     if (p.length === 2 && st.d) {
-      const k = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) / st.d
-      const mid = { x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2 }
-      setView(fit({ s: st.view.s * k, x: st.view.x * k + mid.x - st.px, y: st.view.y * k + mid.y - st.py }))
-    } else if (p.length === 1) {
-      setView(fit({ ...st.view, x: st.view.x + p[0].x - st.px, y: st.view.y + p[0].y - st.py }))
+      // двумя пальцами — размер рамки вокруг её центра
+      const size = s0.size * (Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) / st.d)
+      setBox(fitBox({ size, x: s0.x + (s0.size - size) / 2, y: s0.y + (s0.size - size) / 2 }))
+      return
     }
+    const dx = p[0].x - st.px
+    const dy = p[0].y - st.py
+    if (st.mode === 'move') return setBox(fitBox({ ...s0, x: s0.x + dx, y: s0.y + dy }))
+    // угол: противоположный угол стоит на месте, рамка остаётся квадратной
+    const sx = st.mode.endsWith('w') ? -1 : 1
+    const sy = st.mode.startsWith('n') ? -1 : 1
+    const ax = sx < 0 ? s0.x + s0.size : s0.x
+    const ay = sy < 0 ? s0.y + s0.size : s0.y
+    const want = s0.size + (sx * dx + sy * dy) / 2
+    const room = Math.min(sx > 0 ? R.x + R.w - ax : ax - R.x, sy > 0 ? R.y + R.h - ay : ay - R.y)
+    const size = clamp(want, Math.min(MIN_BOX, room), room)
+    setBox({ size, x: sx > 0 ? ax : ax - size, y: sy > 0 ? ay : ay - size })
   }
+
   const up = (e: PointerEvent) => {
-    const st = start.current
     pts.current.delete(e.pointerId)
-    if (pts.current.size) return snapshot()
-    setDragging(false)
+    if (pts.current.size) return snapshot('move')
     start.current = null
-    // двойное нажатие — приблизить / вернуть
-    if (st && Math.hypot(e.clientX - st.px, e.clientY - st.py) < 6) {
-      const now = Date.now()
-      if (now - lastTap.current < 300) {
-        zoomTo(view.s > sMin * 1.05 ? sMin : sMin * 2.5)
-        lastTap.current = 0
-      } else lastTap.current = now
-    }
+    setActive(null)
   }
 
   const reset = () => {
@@ -198,7 +193,7 @@ export function AvatarCropper({ file, onCancel, onDone }: { file: File | null; o
     setTilt(0)
     setFlip(false)
     setAdjust(NO_ADJUST)
-    setView(fit({ x: 0, y: 0, s: sMin }, 0))
+    setBoxKey('')
   }
 
   const done = () => {
@@ -209,194 +204,174 @@ export function AvatarCropper({ file, onCancel, onDone }: { file: File | null; o
     ctx.fillStyle = '#fff'
     ctx.fillRect(0, 0, OUT, OUT)
     ctx.imageSmoothingQuality = 'high'
+    // от центра рамки к центру фото, в масштабе итоговой картинки
     ctx.translate(OUT / 2, OUT / 2)
-    ctx.scale(OUT / D, OUT / D)
-    ctx.translate(view.x, view.y)
+    ctx.scale(OUT / b.size, OUT / b.size)
+    ctx.translate(R.x + R.w / 2 - (b.x + b.size / 2), R.y + R.h / 2 - (b.y + b.size / 2))
     ctx.rotate(angle)
-    ctx.scale(view.s * (flip ? -1 : 1), view.s)
+    ctx.scale(f * k * (flip ? -1 : 1), f * k)
     ctx.drawImage(img, -W / 2, -H / 2)
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     applyAdjust(ctx, adjust)
     onDone({ src: c.toDataURL('image/jpeg', 0.72), ratio: 1 })
   }
 
-  if (!file) return null
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[80] flex flex-col bg-[#0b0f13] text-white select-none"
-      role="dialog"
-      aria-modal
-      aria-label="Фото профиля"
-    >
-      {/* верх */}
-      <div className="flex items-center gap-2 px-3 pt-3 pb-2" style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}>
-        <button
-          type="button"
-          onClick={onCancel}
-          aria-label="Отмена"
-          className="press inline-flex h-10 w-10 items-center justify-center rounded-full hover:bg-white/10"
-        >
-          <X size={22} />
-        </button>
-        <p className="flex-1 text-center text-base font-bold">Фото профиля</p>
-        <button
-          type="button"
-          onClick={reset}
-          className="press rounded-full px-3 py-2 text-sm font-semibold text-white/80 hover:bg-white/10"
-          aria-label="Сбросить всё"
-        >
-          Сбросить
-        </button>
-      </div>
+  const handles: Handle[] = ['nw', 'ne', 'sw', 'se']
 
-      {/* фото и круг */}
+  return (
+    <Sheet open={!!file} onClose={onCancel} title="Фото профиля">
       <div
         ref={stageRef}
-        className="relative min-h-0 flex-1 touch-none overflow-hidden"
-        style={{ cursor: dragging ? 'grabbing' : 'grab' }}
+        className="relative w-full touch-none overflow-hidden rounded-2xl bg-elevated select-none"
+        style={{ height: stageH, cursor: active === 'move' ? 'grabbing' : 'grab' }}
         onPointerDown={down}
         onPointerMove={move}
         onPointerUp={up}
         onPointerCancel={up}
-        onWheel={(e) => zoomTo(view.s * (e.deltaY < 0 ? 1.1 : 1 / 1.1))}
+        onWheel={(e) => {
+          const size = b.size * (e.deltaY < 0 ? 1.06 : 1 / 1.06)
+          setBox(fitBox({ size, x: b.x + (b.size - size) / 2, y: b.y + (b.size - size) / 2 }))
+        }}
       >
-        {img && view.s > 0 && (
-          <img
-            src={img.src}
-            alt=""
-            draggable={false}
-            className={cx('pointer-events-none absolute max-w-none', !dragging && 'transition-transform duration-150')}
-            style={{
-              width: W,
-              height: H,
-              left: stage.w / 2 - W / 2,
-              top: stage.h / 2 - H / 2,
-              transform: `translate(${view.x}px, ${view.y}px) rotate(${angle}rad) scale(${view.s * (flip ? -1 : 1)}, ${view.s})`,
-              filter: cssFilter(adjust),
-            }}
-          />
-        )}
-        {/* затемнение вокруг круга и сетка третей внутри, пока двигают */}
-        <div
-          className="pointer-events-none absolute rounded-full"
-          style={{
-            width: D,
-            height: D,
-            left: stage.w / 2 - r,
-            top: stage.h / 2 - r,
-            boxShadow: '0 0 0 9999px rgba(11, 15, 19, 0.72)',
-            outline: '2px solid rgba(255,255,255,0.9)',
-          }}
-        >
-          {dragging && (
-            <div className="absolute inset-0 overflow-hidden rounded-full">
-              {[1, 2].map((i) => (
-                <span key={`v${i}`} className="absolute top-0 bottom-0 w-px bg-white/40" style={{ left: `${(i * 100) / 3}%` }} />
-              ))}
-              {[1, 2].map((i) => (
-                <span key={`h${i}`} className="absolute right-0 left-0 h-px bg-white/40" style={{ top: `${(i * 100) / 3}%` }} />
+        {img && stageW > 0 && (
+          <>
+            {/* фото целиком (с наклоном — чуть крупнее, без пустых углов) */}
+            <div className="pointer-events-none absolute overflow-hidden" style={{ left: R.x, top: R.y, width: R.w, height: R.h }}>
+              <img
+                src={img.src}
+                alt=""
+                draggable={false}
+                className="absolute max-w-none"
+                style={{
+                  width: W,
+                  height: H,
+                  left: R.w / 2 - W / 2,
+                  top: R.h / 2 - H / 2,
+                  transform: `rotate(${angle}rad) scale(${f * k * (flip ? -1 : 1)}, ${f * k})`,
+                  filter: cssFilter(adjust),
+                }}
+              />
+            </div>
+            {/* рамка: вокруг круга затемнено, по углам — ручки */}
+            <div className="absolute" style={{ left: b.x, top: b.y, width: b.size, height: b.size }}>
+              <div
+                className="pointer-events-none absolute inset-0 rounded-full"
+                style={{ boxShadow: '0 0 0 9999px rgba(15, 23, 32, 0.5)' }}
+              />
+              <div className="pointer-events-none absolute inset-0 border border-white/70" />
+              <div className="pointer-events-none absolute inset-0 rounded-full border-2 border-white" />
+              {active && (
+                <div className="pointer-events-none absolute inset-0">
+                  {[1, 2].map((i) => (
+                    <span key={`v${i}`} className="absolute top-0 bottom-0 w-px bg-white/50" style={{ left: `${(i * 100) / 3}%` }} />
+                  ))}
+                  {[1, 2].map((i) => (
+                    <span key={`h${i}`} className="absolute right-0 left-0 h-px bg-white/50" style={{ top: `${(i * 100) / 3}%` }} />
+                  ))}
+                </div>
+              )}
+              {handles.map((h) => (
+                <span
+                  key={h}
+                  data-handle={h}
+                  aria-hidden
+                  className={cx(
+                    'absolute h-8 w-8',
+                    h.startsWith('n') ? '-top-3' : '-bottom-3',
+                    h.endsWith('w') ? '-left-3' : '-right-3',
+                    h === 'nw' || h === 'se' ? 'cursor-nwse-resize' : 'cursor-nesw-resize',
+                  )}
+                >
+                  {/* уголок-«Г» */}
+                  <span
+                    data-handle={h}
+                    className={cx(
+                      'absolute h-4 w-4 border-white',
+                      h.startsWith('n') ? 'top-3 border-t-[3px]' : 'bottom-3 border-b-[3px]',
+                      h.endsWith('w') ? 'left-3 border-l-[3px]' : 'right-3 border-r-[3px]',
+                    )}
+                  />
+                </span>
               ))}
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* инструменты */}
-      <div className="mx-auto w-full max-w-xl px-4 pt-3" style={{ paddingBottom: 'max(14px, env(safe-area-inset-bottom))' }}>
-        {tab === 'crop' ? (
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setRot90((v) => (v + 1) % 4)}
-              aria-label="Повернуть на 90°"
-              title="Повернуть на 90°"
-              className="press inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full hover:bg-white/10"
-            >
-              <RotateCcwSquare size={22} />
-            </button>
-            <TiltRuler value={tilt} onChange={setTilt} />
-            <button
-              type="button"
-              onClick={() => setFlip((f) => !f)}
-              aria-label="Отразить"
-              aria-pressed={flip}
-              title="Отразить"
-              className={cx(
-                'press inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full hover:bg-white/10',
-                flip && 'text-accent',
-              )}
-            >
-              <FlipHorizontal2 size={22} />
-            </button>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-2.5">
-            {(
-              [
-                ['brightness', 'Яркость'],
-                ['contrast', 'Контраст'],
-                ['saturation', 'Насыщенность'],
-              ] as const
-            ).map(([k, label]) => (
-              <label key={k} className="flex items-center gap-3 text-sm">
-                <span className="w-28 shrink-0 text-white/80">{label}</span>
-                <input
-                  type="range"
-                  min={-100}
-                  max={100}
-                  value={adjust[k]}
-                  onChange={(e) => setAdjust((a) => ({ ...a, [k]: Number(e.target.value) }))}
-                  onDoubleClick={() => setAdjust((a) => ({ ...a, [k]: 0 }))}
-                  className="min-w-0 flex-1 cursor-pointer accent-accent"
-                  aria-label={label}
-                />
-                <span className="w-9 text-right text-xs text-white/60 tabular-nums">{adjust[k] > 0 ? `+${adjust[k]}` : adjust[k]}</span>
-              </label>
-            ))}
-          </div>
+          </>
         )}
+      </div>
+      <p className="mt-2 text-center text-xs">Двигайте рамку и тяните за углы. Колёсико или два пальца — тоже меняют размер</p>
 
-        {/* низ: отмена, вкладки, готово */}
-        <div className="mt-3 flex items-center gap-2">
+      <div className="mt-4">
+        <Segmented
+          value={tab}
+          onChange={setTab}
+          options={[
+            { id: 'crop', label: 'Кадр' },
+            { id: 'color', label: 'Цвет' },
+          ]}
+        />
+      </div>
+
+      {tab === 'crop' ? (
+        <div className="mt-4 flex items-center gap-2">
           <button
             type="button"
-            onClick={onCancel}
-            aria-label="Отмена"
-            className="press inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/10 hover:bg-white/15"
+            onClick={() => setRot90((v) => (v + 1) % 4)}
+            aria-label="Повернуть на 90°"
+            title="Повернуть на 90°"
+            className="press card inline-flex h-11 w-11 shrink-0 items-center justify-center hover:bg-active"
           >
-            <X size={22} />
+            <RotateCcwSquare size={20} />
           </button>
-          <div className="mx-auto flex rounded-full bg-white/10 p-1 text-sm font-semibold">
-            {(
-              [
-                ['crop', 'Кадр'],
-                ['color', 'Цвет'],
-              ] as const
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setTab(id)}
-                aria-pressed={tab === id}
-                className={cx('press rounded-full px-4 py-2', tab === id ? 'bg-white text-[#0b0f13]' : 'text-white/80')}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          <TiltRuler value={tilt} onChange={setTilt} />
           <button
             type="button"
-            onClick={done}
-            disabled={!img}
-            aria-label="Готово"
-            className="press grad inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full"
+            onClick={() => setFlip((v) => !v)}
+            aria-label="Отразить"
+            aria-pressed={flip}
+            title="Отразить"
+            className={cx('press card inline-flex h-11 w-11 shrink-0 items-center justify-center hover:bg-active', flip && 'chip-on')}
           >
-            <Check size={24} strokeWidth={2.6} />
+            <FlipHorizontal2 size={20} />
           </button>
         </div>
+      ) : (
+        <div className="mt-4 flex flex-col gap-2.5">
+          {(
+            [
+              ['brightness', 'Яркость'],
+              ['contrast', 'Контраст'],
+              ['saturation', 'Насыщенность'],
+            ] as const
+          ).map(([k2, label]) => (
+            <label key={k2} className="flex items-center gap-3 text-sm">
+              <span className="w-28 shrink-0">{label}</span>
+              <input
+                type="range"
+                min={-100}
+                max={100}
+                value={adjust[k2]}
+                onChange={(e) => setAdjust((a) => ({ ...a, [k2]: Number(e.target.value) }))}
+                onDoubleClick={() => setAdjust((a) => ({ ...a, [k2]: 0 }))}
+                className="min-w-0 flex-1 cursor-pointer accent-accent"
+                aria-label={label}
+              />
+              <span className="w-9 text-right text-xs tabular-nums">{adjust[k2] > 0 ? `+${adjust[k2]}` : adjust[k2]}</span>
+            </label>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-5 grid grid-cols-[auto_1fr_1fr] gap-2">
+        <Button kind="neutral" onClick={reset}>
+          Сбросить
+        </Button>
+        <Button kind="neutral" onClick={onCancel}>
+          Отмена
+        </Button>
+        <Button onClick={done} disabled={!img}>
+          Готово
+        </Button>
       </div>
-    </div>,
-    document.body,
+    </Sheet>
   )
 }
 
@@ -408,13 +383,14 @@ function TiltRuler({ value, onChange }: { value: number; onChange: (v: number) =
       <button
         type="button"
         onClick={() => onChange(0)}
-        className={cx('press mx-auto mb-1 block rounded-full px-2 text-xs font-bold tabular-nums', value ? 'text-accent' : 'text-white/70')}
+        className={cx('press mx-auto block rounded-full px-2 text-xs font-bold tabular-nums', value ? 'text-accent' : '')}
         aria-label="Наклон: сбросить в 0"
+        title="Наклон. Нажмите, чтобы сбросить"
       >
         {value > 0 ? `+${Math.round(value)}` : Math.round(value)}°
       </button>
       <div
-        className="relative h-8 cursor-ew-resize touch-none overflow-hidden"
+        className="relative h-7 cursor-ew-resize touch-none overflow-hidden"
         style={{ maskImage: 'linear-gradient(90deg, transparent, #000 20%, #000 80%, transparent)' }}
         role="slider"
         aria-label="Наклон"
@@ -444,8 +420,8 @@ function TiltRuler({ value, onChange }: { value: number; onChange: (v: number) =
             <span
               key={d}
               className={cx(
-                'absolute bottom-1 w-px rounded-full',
-                d % 15 === 0 ? 'h-4 bg-white/90' : d % 5 === 0 ? 'h-3 bg-white/60' : 'h-2 bg-white/35',
+                'absolute bottom-1 w-px rounded-full bg-ink',
+                d % 15 === 0 ? 'h-4 opacity-80' : d % 5 === 0 ? 'h-3 opacity-50' : 'h-2 opacity-25',
               )}
               style={{ left: d * PX_PER_DEG }}
             />

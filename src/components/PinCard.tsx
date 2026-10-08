@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Bookmark, Check, CircleCheck, Images } from 'lucide-react'
+import { Bookmark, Check, CircleCheck, CircleX, Images } from 'lucide-react'
 import type { Post } from '../data/types'
 import { useStore } from '../store'
 import { useUi } from '../ui-context'
@@ -11,7 +11,9 @@ export function PinCard({ post, folderId }: { post: Post; folderId?: string }) {
   const { user, triesOf, savedIn, folders, toggleDone } = useStore()
   const { openSave } = useUi()
   const author = user(post.authorId)
-  const okCount = triesOf(post.id).filter((t) => t.ok).length
+  const tries = triesOf(post.id)
+  const okCount = tries.filter((t) => t.ok).length
+  const failCount = tries.length - okCount
   const saved = savedIn(post.id).length > 0
   const folder = folderId ? folders.find((f) => f.id === folderId) : undefined
   const done = folder?.done.includes(post.id)
@@ -90,6 +92,15 @@ export function PinCard({ post, folderId }: { post: Post; folderId?: string }) {
             <span className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-accent" title="Получилось у повторивших">
               <CircleCheck size={13} strokeWidth={2.4} />
               {num(okCount)}
+            </span>
+          )}
+          {failCount > 0 && (
+            <span
+              className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-rose-500"
+              title="Не получилось у повторивших"
+            >
+              <CircleX size={13} strokeWidth={2.4} />
+              {num(failCount)}
             </span>
           )}
         </div>

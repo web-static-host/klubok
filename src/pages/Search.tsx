@@ -1,6 +1,7 @@
 import { Link, useSearchParams } from 'react-router-dom'
 import { SearchX } from 'lucide-react'
 import { useStore } from '../store'
+import { topicLabel } from '../data/types'
 import { num } from '../lib'
 import { SearchBox } from '../components/Layout'
 import { Masonry } from '../components/Masonry'
@@ -15,7 +16,10 @@ export function Search() {
 
   const found = q
     ? posts.filter((p) =>
-        [p.title, p.text, ...p.tags, user(p.authorId).name, ...(p.recipe?.ingredients ?? [])].join(' ').toLowerCase().includes(q),
+        [p.title, p.text, topicLabel(p.topic), ...p.tags, user(p.authorId).name, ...(p.recipe?.ingredients ?? [])]
+          .join(' ')
+          .toLowerCase()
+          .includes(q),
       )
     : []
   const people = q ? users.filter((u) => u.id !== 'me' && (u.name + ' ' + u.handle).toLowerCase().includes(q)) : []

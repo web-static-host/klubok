@@ -98,7 +98,7 @@ export const posts: Post[] = [
   {
     id: 'p1',
     type: 'recipe',
-    topic: 'recipes',
+    topic: 'breakfast',
     authorId: 'u1',
     createdAt: ago(3),
     likes: 1240,
@@ -129,7 +129,7 @@ export const posts: Post[] = [
   {
     id: 'p2',
     type: 'hack',
-    topic: 'hacks',
+    topic: 'cleaning',
     authorId: 'u8',
     createdAt: ago(5),
     likes: 3820,
@@ -147,7 +147,7 @@ export const posts: Post[] = [
   {
     id: 'p3',
     type: 'beforeafter',
-    topic: 'home',
+    topic: 'repair',
     authorId: 'u2',
     createdAt: ago(8),
     likes: 2150,
@@ -159,7 +159,7 @@ export const posts: Post[] = [
   {
     id: 'p4',
     type: 'photo',
-    topic: 'crafts',
+    topic: 'knitting',
     authorId: 'u3',
     createdAt: ago(10),
     likes: 980,
@@ -188,7 +188,7 @@ export const posts: Post[] = [
   {
     id: 'p6',
     type: 'recipe',
-    topic: 'recipes',
+    topic: 'baking',
     authorId: 'u7',
     createdAt: ago(18),
     likes: 1890,
@@ -212,7 +212,7 @@ export const posts: Post[] = [
   {
     id: 'p7',
     type: 'photo',
-    topic: 'home',
+    topic: 'storage',
     authorId: 'u5',
     createdAt: ago(20),
     likes: 4410,
@@ -224,7 +224,7 @@ export const posts: Post[] = [
   {
     id: 'p8',
     type: 'recipe',
-    topic: 'recipes',
+    topic: 'grill',
     authorId: 'u6',
     createdAt: ago(26),
     likes: 1320,
@@ -273,7 +273,7 @@ export const posts: Post[] = [
   {
     id: 'p10',
     type: 'photo',
-    topic: 'crafts',
+    topic: 'decor',
     authorId: 'u3',
     createdAt: ago(34),
     likes: 1630,
@@ -297,7 +297,7 @@ export const posts: Post[] = [
   {
     id: 'p12',
     type: 'recipe',
-    topic: 'recipes',
+    topic: 'baking',
     authorId: 'u7',
     createdAt: ago(44),
     likes: 2240,
@@ -321,7 +321,7 @@ export const posts: Post[] = [
   {
     id: 'p13',
     type: 'photo',
-    topic: 'home',
+    topic: 'interior',
     authorId: 'u5',
     createdAt: ago(50),
     likes: 2670,
@@ -333,7 +333,7 @@ export const posts: Post[] = [
   {
     id: 'p14',
     type: 'hack',
-    topic: 'home',
+    topic: 'repair',
     authorId: 'u2',
     createdAt: ago(56),
     likes: 1410,
@@ -408,7 +408,7 @@ export const posts: Post[] = [
   {
     id: 'p18',
     type: 'beforeafter',
-    topic: 'home',
+    topic: 'storage',
     authorId: 'u5',
     createdAt: ago(84),
     likes: 3060,
@@ -420,7 +420,7 @@ export const posts: Post[] = [
   {
     id: 'p19',
     type: 'recipe',
-    topic: 'recipes',
+    topic: 'grill',
     authorId: 'u6',
     createdAt: ago(90),
     likes: 990,
@@ -468,7 +468,7 @@ export const posts: Post[] = [
   {
     id: 'p22',
     type: 'photo',
-    topic: 'home',
+    topic: 'diy',
     authorId: 'u2',
     createdAt: ago(120),
     likes: 1980,
@@ -480,7 +480,7 @@ export const posts: Post[] = [
   {
     id: 'p23',
     type: 'recipe',
-    topic: 'recipes',
+    topic: 'baking',
     authorId: 'u7',
     createdAt: ago(130),
     likes: 1560,
@@ -515,7 +515,7 @@ export const posts: Post[] = [
   {
     id: 'p25',
     type: 'beforeafter',
-    topic: 'crafts',
+    topic: 'sewing',
     authorId: 'u3',
     createdAt: ago(150),
     likes: 1340,
@@ -527,7 +527,7 @@ export const posts: Post[] = [
   {
     id: 'p26',
     type: 'hack',
-    topic: 'home',
+    topic: 'storage',
     authorId: 'u5',
     createdAt: ago(160),
     likes: 2210,
@@ -571,7 +571,7 @@ export const posts: Post[] = [
   {
     id: 'p28',
     type: 'photo',
-    topic: 'home',
+    topic: 'kids',
     authorId: 'u5',
     createdAt: ago(180),
     likes: 3550,
@@ -596,7 +596,7 @@ export const posts: Post[] = [
   {
     id: 'p30',
     type: 'photo',
-    topic: 'recipes',
+    topic: 'grill',
     authorId: 'u6',
     createdAt: ago(200),
     likes: 610,

@@ -5,7 +5,6 @@
 import { writeFileSync } from 'node:fs'
 import { posts, tries, users, ME } from '../src/data/mock.ts'
 
-const H = 3600_000
 const now = Date.now()
 
 /** Постоянные id: u3 → …-8000-000000000003, p12 → …-9000-000000000012 */

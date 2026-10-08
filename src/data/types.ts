@@ -1,5 +1,6 @@
 export type PostType = 'photo' | 'recipe' | 'hack' | 'beforeafter'
-export type Topic = 'recipes' | 'hacks' | 'home' | 'crafts' | 'garden'
+/** Категория: id из списка TOPICS или своя, вписанная автором (хранится как текст) */
+export type Topic = string
 
 /** Картинка: в прототипе — заглушка из фотостока по теме и номеру; в настоящем сайте — ссылка на файл в хранилище */
 export interface Img {
@@ -68,14 +69,36 @@ export interface Folder {
   done: string[]
 }
 
-export const TOPICS: { id: Topic | 'all'; label: string }[] = [
-  { id: 'all', label: 'Все' },
+/** Готовые категории. Если ничего не подходит, автор вписывает свою. */
+export const TOPICS: { id: Topic; label: string }[] = [
   { id: 'recipes', label: 'Рецепты' },
+  { id: 'baking', label: 'Выпечка' },
+  { id: 'desserts', label: 'Десерты' },
+  { id: 'breakfast', label: 'Завтраки' },
+  { id: 'drinks', label: 'Напитки' },
+  { id: 'preserves', label: 'Заготовки' },
+  { id: 'grill', label: 'Мангал и костёр' },
   { id: 'hacks', label: 'Лайфхаки' },
-  { id: 'home', label: 'Дом' },
+  { id: 'cleaning', label: 'Уборка' },
+  { id: 'storage', label: 'Хранение' },
+  { id: 'home', label: 'Дом и уют' },
+  { id: 'interior', label: 'Интерьер' },
+  { id: 'repair', label: 'Ремонт' },
+  { id: 'diy', label: 'Своими руками' },
   { id: 'crafts', label: 'Рукоделие' },
-  { id: 'garden', label: 'Сад' },
+  { id: 'knitting', label: 'Вязание' },
+  { id: 'sewing', label: 'Шитьё' },
+  { id: 'decor', label: 'Декор' },
+  { id: 'holidays', label: 'Праздники' },
+  { id: 'gifts', label: 'Подарки' },
+  { id: 'garden', label: 'Сад и огород' },
+  { id: 'plants', label: 'Комнатные растения' },
+  { id: 'kids', label: 'Для детей' },
+  { id: 'pets', label: 'Питомцы' },
 ]
+
+/** Название категории: из списка или своя как есть */
+export const topicLabel = (t: Topic) => TOPICS.find((x) => x.id === t)?.label ?? t
 
 export const TYPE_META: Record<PostType, { label: string; colors: [string, string] }> = {
   photo: { label: 'Фото', colors: ['#38BDF8', '#2563EB'] },

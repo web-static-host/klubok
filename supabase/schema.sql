@@ -10,7 +10,6 @@ drop type if exists post_type, post_topic cascade;
 
 -- ─── Типы ───────────────────────────────────────────────────
 create type post_type as enum ('photo', 'recipe', 'hack', 'beforeafter');
-create type post_topic as enum ('recipes', 'hacks', 'home', 'crafts', 'garden');
 
 -- ─── Профили ────────────────────────────────────────────────
 -- У настоящих пользователей id = id входа (auth.users). У тестовых авторов — свой id без входа.
@@ -34,7 +33,8 @@ create table posts (
   id uuid primary key default gen_random_uuid(),
   author_id uuid not null references profiles (id) on delete cascade,
   type post_type not null,
-  topic post_topic not null,
+  -- категория: id из списка на сайте (recipes, baking …) или своя, вписанная автором
+  topic text not null check (char_length(topic) between 1 and 40),
   title text not null check (char_length(title) between 1 and 120),
   text text not null default '',
   images jsonb not null default '[]' check (jsonb_typeof(images) = 'array'),

@@ -8,18 +8,19 @@
   Лента «Для вас», «Подписки», страница поста (рецепт / лайфхак / до и после), «Я попробовал», папки с отметкой «Сделано», профиль, создание поста, поиск, светлая/тёмная тема.
   Данные тестовые (`src/data/mock.ts`), хранятся в браузере (`src/store.tsx`).
 
-## Следующий шаг: тестовая база на Supabase
-1. Владелец очищает/пересоздаёт проект Supabase (регион Central EU) и присылает **Project URL** и **Publishable key** (anon). Secret / service_role и пароль базы — не присылать.
-2. Подготовить `supabase/schema.sql` — владелец запускает его в SQL Editor (из среды ИИ доступа к Supabase нет):
-   - `profiles` (id = auth.users.id, имя, @ник, описание, город)
-   - `posts` (автор, тип photo/recipe/hack/beforeafter, тема, название, текст, картинки, рецепт jsonb, шаги jsonb, теги)
-   - `tries` (пост, автор, получилось да/нет, текст, фото) — главная механика
-   - `folders`, `folder_items` (пост, отметка «сделано»)
-   - `follows`, `likes`
-   - Storage-папка `images` для фото
-   - RLS: читать могут все, менять — только своё
-3. Вход: почта (magic link) на старте; VK ID / Яндекс ID позже.
-4. Заменить функции `src/store.tsx` запросами к Supabase, оставить тестовые данные как начальное наполнение.
+## Тестовая база Supabase (в работе)
+Проект: `https://exjpqpmfdumjqzgehtpg.supabase.co` (Central EU). Адрес и открытый ключ — в `.env`, подключение — `src/supabase.ts`.
+
+Готово:
+- `supabase/schema.sql` — таблицы `profiles`, `posts`, `tries`, `folders`, `folder_items`, `follows`, `likes`; хранилище фото `images`; правила доступа (читать могут все, менять — только своё; папки видит только владелец); счётчики лайков, подписчиков, «попробовали / получилось» считаются сами. Новому пользователю автоматически создаётся профиль и папка «Хочу попробовать».
+- `supabase/seed.sql` — тестовые авторы, посты и отзывы (собирается из `src/data/mock.ts` командой `node --experimental-strip-types scripts/make-seed.ts`).
+- Оба файла проверены на локальном Postgres.
+
+Дальше:
+1. Владелец запускает в Supabase → SQL Editor сначала `schema.sql`, потом `seed.sql`.
+2. Владелец разрешает среде ИИ доступ к `*.supabase.co` (настройки облачной среды → Network access → Allowed domains), чтобы ИИ мог проверять сайт с настоящей базой.
+3. Вход по почте (magic link): в Supabase → Authentication → URL Configuration указать Site URL `https://web-static-host.github.io/klubok/`.
+4. Заменить функции `src/store.tsx` запросами к Supabase.
 
 ## Решения владельца
 - Без внешних ссылок; вместо досок — папки; сохранение = ссылка на оригинал, автор виден всегда.

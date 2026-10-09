@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { AiMeta, Folder, Img, Post, PostType, Reply, Topic, Try, User } from './data/types'
 import { PUBLIC_QUERIES, canonical, restGet, supabase } from './supabase'
+import { shrink } from './lib'
 
 /**
  * Состояние сайта. Данные — в базе Supabase, тема оформления — в браузере.
@@ -52,7 +53,7 @@ interface Store {
   /** удалить свою идею (вместе с отзывами и картинками); не вышло — исключение Rejected */
   deletePost: (id: string) => Promise<void>
   /** загрузить своё фото в хранилище (сразу после выбора) */
-  uploadImg: (img: Img) => Promise<Img>
+  uploadImg: (img: Img, withThumb?: boolean) => Promise<Img>
   /** проверить загруженную картинку по правилам; нет связи или старая функция — исключение */
   /** topics — категории, которые ИИ подобрал по картинке (до 5), title — название, которое он предлагает */
   checkImg: (
@@ -454,13 +455,23 @@ export function StoreProvider({
   }
 
   /** Своё фото (data:URL) → файл в хранилище images/<id>/…; готовые адреса — как есть */
-  const upload = async (img: Img): Promise<Img> => {
+  /** withThumb — ещё и уменьшенная копия для ленты (только картинки идеи) */
+  const upload = async (img: Img, withThumb = false): Promise<Img> => {
     if (!img.src?.startsWith('data:')) return img
-    const blob = await (await fetch(img.src)).blob()
-    const path = `${uid}/${crypto.randomUUID()}.jpg`
+    const name = `${uid}/${crypto.randomUUID()}`
     // имя файла всегда новое — браузер может хранить картинку у себя год и не переспрашивать
-    check(await supabase.storage.from('images').upload(path, blob, { contentType: 'image/jpeg', cacheControl: '31536000' }))
-    return { src: canonical(supabase.storage.from('images').getPublicUrl(path).data.publicUrl), ratio: img.ratio }
+    const put = async (path: string, blob: Blob) => {
+      check(await supabase.storage.from('images').upload(path, blob, { contentType: 'image/jpeg', cacheControl: '31536000' }))
+      return canonical(supabase.storage.from('images').getPublicUrl(path).data.publicUrl)
+    }
+    // оригинал и уменьшенная копия для ленты — одновременно
+    const [src, thumb] = await Promise.all([
+      fetch(img.src)
+        .then((r) => r.blob())
+        .then((b) => put(`${name}.jpg`, b)),
+      withThumb ? shrink(img.src).then((b) => (b ? put(`${name}_s.jpg`, b) : undefined)) : undefined,
+    ])
+    return { src, ratio: img.ratio, ...(thumb ? { thumb } : {}) }
   }
 
   /** счётчик «в избранном» на сайте сразу, не дожидаясь базы (в базе его считает сама база) */
@@ -500,7 +511,7 @@ export function StoreProvider({
           : supabase.from('follows').insert({ follower_id: uid, following_id: id }),
       )
     },
-    uploadImg: (img) => upload(img),
+    uploadImg: (img, withThumb) => upload(img, withThumb),
     checkImg: async (img, purpose) => {
       const { data, error } = await supabase.functions.invoke('publish', { body: { action: 'check-image', img, purpose } })
       if (error || typeof data?.ok !== 'boolean') throw new Error('проверка недоступна')
@@ -514,7 +525,7 @@ export function StoreProvider({
     },
     addPost: async (data) => {
       if (!uid) throw new Error('not signed in')
-      const images = await Promise.all(data.images.map(upload))
+      const images = await Promise.all(data.images.map((i) => upload(i, true)))
       const p = toPost((await publish({ action: 'post', type: data.type, topics: data.topics, title: data.title, images })) as PostRow)
       setPosts((ps) => [p, ...ps])
       setFresh(p.id)

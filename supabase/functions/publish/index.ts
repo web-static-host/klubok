@@ -459,14 +459,20 @@ const PUBLIC_PREFIX = `${SB_URL}/storage/v1/object/public/images/`
 interface ImgIn {
   src: string
   ratio: number
+  /** уменьшенная копия для ленты (600 px в ширину), делает сайт при загрузке */
+  thumb?: string
 }
 
 /** Картинка должна лежать в хранилище сайта, в папке этого пользователя (никаких чужих адресов) */
 /** …/storage/v1/object/public/images/… на любом адресе → тот же файл на адресе Supabase */
 function canon(img: ImgIn): ImgIn {
-  const src = typeof img?.src === 'string' ? img.src : ''
-  const i = src.indexOf('/storage/v1/object/public/images/')
-  return i < 0 ? img : { ...img, src: SB_URL + src.slice(i) }
+  const fix = (u: unknown) => {
+    const s = typeof u === 'string' ? u : ''
+    const i = s.indexOf('/storage/v1/object/public/images/')
+    return i < 0 ? s : SB_URL + s.slice(i)
+  }
+  if (!img || typeof img !== 'object') return img
+  return { ...img, src: fix(img.src) || img.src, ...(img.thumb ? { thumb: fix(img.thumb) } : {}) }
 }
 
 function ownImage(img: ImgIn | undefined, uid: string): img is ImgIn {
@@ -540,11 +546,18 @@ async function checkImage(img: ImgIn, uid: string, allowPeople: boolean, tm: Tim
  * Строгая проверка текста с картинки (ссылки, мат): нашлось — идея скрывается для всех, автор видит причину.
  * Картинки — по одной (у ИИ один поток); функция живёт ограниченное время, поэтому не дольше ~100 с.
  */
-async function describePost(postId: string, images: ImgIn[], quick: Meta, words: string[] = []) {
+async function describePost(postId: string, uid: string, images: ImgIn[], quick: Meta, words: string[] = []) {
   const start = performance.now()
   const metas: Meta[] = []
   const texts: string[] = []
   const bad: string[] = []
+  // уменьшенные копии первых двух картинок (их видно в ленте) делает сайт — проверяем и их, чтобы в ленту не подсунули другое
+  for (const [i, img] of images.slice(0, 2).entries()) {
+    if (!img.thumb) continue
+    const c = await checkImage({ src: img.thumb, ratio: img.ratio }, uid, false)
+    if (!c.ok) bad.push(...c.reasons.map((r) => `Картинка ${i + 1} в ленте: ${r}`))
+  }
+  if (bad.length) await admin.from('posts').update({ hidden: true, hidden_reason: bad.join('. ') }).eq('id', postId)
   // название и категории — ИИ проверяет уже после публикации; нарушение — скрываем сразу, не дожидаясь разбора картинок
   if (words.length) {
     const t = await checkTexts(words)
@@ -794,7 +807,12 @@ export async function handle(req: Request): Promise<Response> {
           topic: topics[0],
           topics,
           title,
-          images: images.map((i) => ({ src: i.src, ratio: Number(i.ratio) })),
+          // уменьшенную копию берём, только если она тоже из папки автора
+          images: images.map((i) => ({
+            src: i.src,
+            ratio: Number(i.ratio),
+            ...(typeof i.thumb === 'string' && i.thumb.startsWith(`${PUBLIC_PREFIX}${uid}/`) ? { thumb: i.thumb } : {}),
+          })),
           ai_tags: m.tags,
           ai_meta: m.meta,
           ai_text: m.aiText || null,
@@ -805,7 +823,7 @@ export async function handle(req: Request): Promise<Response> {
         .single()
       if (error) return json({ ok: false, reasons: ['Не получилось сохранить'], detail: error.message }, 500)
       // подробный разбор картинок — уже после ответа, человеку ждать незачем
-      later(describePost(data.id, images, m.meta, [title, ...topics.filter((t) => !TOPICS.some(([id]) => id === t))]))
+      later(describePost(data.id, uid, data.images as ImgIn[], m.meta, [title, ...topics.filter((t) => !TOPICS.some(([id]) => id === t))]))
       return json({ ok: true, row: data })
     }
 
@@ -846,7 +864,8 @@ export async function handle(req: Request): Promise<Response> {
       if (!post) return json({ ok: true })
       if (post.author_id !== uid) return json({ ok: false, reasons: ['Удалить можно только свою идею'] }, 403)
       const { data: tries } = await admin.from('tries').select('img').eq('post_id', id)
-      const imgs = [...((post.images as ImgIn[]) ?? []), ...(tries ?? []).map((t) => t.img as ImgIn | null)].filter(
+      const own = ((post.images as ImgIn[]) ?? []).flatMap((i) => [i, ...(i.thumb ? [{ src: i.thumb, ratio: i.ratio }] : [])])
+      const imgs = [...own, ...(tries ?? []).map((t) => t.img as ImgIn | null)].filter(
         (i): i is ImgIn => typeof i?.src === 'string' && i.src.startsWith(PUBLIC_PREFIX) && !i.src.startsWith(`${PUBLIC_PREFIX}demo/`),
       )
       const { error } = await admin.from('posts').delete().eq('id', id)

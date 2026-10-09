@@ -12,6 +12,8 @@ export interface Img {
   tag?: string
   /** пропорция высота/ширина */
   ratio: number
+  /** уменьшенная копия для ленты и миниатюр (600 px в ширину); на странице идеи и при увеличении — оригинал */
+  thumb?: string
 }
 
 export interface User {

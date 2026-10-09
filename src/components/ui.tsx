@@ -2,18 +2,19 @@ import { useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { type LucideIcon } from 'lucide-react'
 import type { Img, Topic, User } from '../data/types'
 import { topicLabel } from '../data/types'
-import { cx, imgSrc } from '../lib'
+import { THUMB_W, cx, imgSrc } from '../lib'
 import { viaApi } from '../supabase'
 
 export function Picture({
   img,
+  w,
   className,
   alt = '',
   fill,
   contain,
 }: {
   img: Img
-  /** нужная ширина — пригодится, когда хранилище начнёт отдавать уменьшенные копии */
+  /** нужная ширина: до 600 — берётся уменьшенная копия (img.thumb), если она есть */
   w?: number
   className?: string
   alt?: string
@@ -24,7 +25,10 @@ export function Picture({
   const [loaded, setLoaded] = useState(false)
   // связь оборвалась — пробуем ещё раз (до двух раз)
   const [retry, setRetry] = useState(0)
-  const src = imgSrc(img)
+  // в ленте и миниатюрах (до 600 px) — уменьшенная копия, если есть; крупно — оригинал. Копия не загрузилась — сразу оригинал
+  const [noThumb, setNoThumb] = useState(false)
+  const thumb = !noThumb && w && w <= THUMB_W && img.thumb
+  const src = thumb ? viaApi(img.thumb!) : imgSrc(img)
   return (
     <div className={cx('relative overflow-hidden bg-elevated', className)} style={fill ? undefined : { aspectRatio: `1 / ${img.ratio}` }}>
       <img
@@ -33,7 +37,7 @@ export function Picture({
         loading="lazy"
         decoding="async"
         onLoad={() => setLoaded(true)}
-        onError={() => retry < 2 && setTimeout(() => setRetry((n) => n + 1), 500 * (retry + 1))}
+        onError={() => (thumb ? setNoThumb(true) : retry < 2 && setTimeout(() => setRetry((n) => n + 1), 500 * (retry + 1)))}
         className={cx(
           'absolute inset-0 h-full w-full transition-opacity duration-300',
           contain ? 'object-contain' : 'object-cover',

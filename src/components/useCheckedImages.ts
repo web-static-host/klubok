@@ -30,7 +30,7 @@ export function useCheckedImages(purpose: 'post' | 'avatar') {
     const fresh: CheckedImg[] = imgs.map((preview) => ({ key: crypto.randomUUID(), preview, status: 'checking' }))
     setItems((a) => [...a, ...fresh])
     for (const it of fresh) {
-      const up = uploadImg(it.preview) // загрузки — сразу все
+      const up = uploadImg(it.preview, purpose === 'post') // загрузки — сразу все; для идеи — с копией для ленты
       up.catch(() => {})
       queue.current = queue.current.then(async () => {
         try {

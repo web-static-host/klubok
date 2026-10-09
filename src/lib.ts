@@ -55,4 +55,26 @@ export function fileToImg(file: File, maxW = 900): Promise<Img> {
   })
 }
 
+/** Ширина копии для ленты: карточка — до ~270 точек, на чётких экранах ×2 — до ~540 px, так что 600 хватает без потери качества */
+export const THUMB_W = 600
+
+/** Уменьшенная копия картинки (data:URL) для ленты; картинка и так не шире — null */
+export function shrink(dataUrl: string, maxW = THUMB_W): Promise<Blob | null> {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onerror = reject
+    image.onload = () => {
+      if (image.width <= maxW * 1.1) return resolve(null)
+      const c = document.createElement('canvas')
+      c.width = maxW
+      c.height = Math.round((image.height * maxW) / image.width)
+      const g = c.getContext('2d')!
+      g.imageSmoothingQuality = 'high'
+      g.drawImage(image, 0, 0, c.width, c.height)
+      c.toBlob((b) => resolve(b), 'image/jpeg', 0.85)
+    }
+    image.src = dataUrl
+  })
+}
+
 export const cx = (...a: (string | false | null | undefined)[]) => a.filter(Boolean).join(' ')

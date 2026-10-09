@@ -17,19 +17,58 @@ export function Bone({ className, style }: { className?: string; style?: CSSProp
   )
 }
 
-/** Пропорции «картинок» — разные, как в настоящей ленте; одинаковые при каждом показе */
-const RATIOS = [1.25, 1, 1.4, 0.8, 1.15, 1.33, 0.95, 1.5, 1.1, 1.2, 0.9, 1.3]
+/**
+ * Строка текста: серая полоска внутри обычной строки. Ставится в элемент с теми же классами шрифта, что у настоящего текста, —
+ * поэтому высота строки совпадает с настоящей до пикселя.
+ */
+export function Line({ w }: { w: number | string }) {
+  return (
+    <span
+      aria-hidden
+      className="inline-block h-[0.8em] max-w-full animate-pulse rounded-md bg-elevated align-middle"
+      style={{ width: w }}
+    />
+  )
+}
 
-/** Карточка ленты: картинка + название + автор (как PinCard) */
-function PinSkeleton({ ratio }: { ratio: number }) {
+/** Пропорции «картинок» — как у настоящих в среднем (1,0–1,5), одинаковые при каждом показе */
+const RATIOS = [1.25, 1.1, 1.4, 1, 1.3, 1.2, 1.5, 1.15, 1.35, 0.9, 1.25, 1.3]
+/** Длины названий (в буквах) — как у настоящих: в узкой колонке часть переносится на вторую строку */
+const TITLES = [26, 20, 33, 24, 30, 18, 28, 22, 35, 25]
+
+/** Ширина колонки ленты — как у Masonry (те же отступы страницы и промежутки) */
+function columnWidth(n: number) {
+  const w = Math.min(document.documentElement.clientWidth, 1600)
+  const pad = w >= 1024 ? 24 : w >= 768 ? 16 : w >= 640 ? 12 : 8
+  const gap = w >= 640 ? 12 : 8
+  return (w - pad * 2 - gap * (n - 1)) / n
+}
+
+/** Карточка ленты: картинка + название + автор — та же разметка, что у PinCard */
+function PinSkeleton({ ratio, title, colW }: { ratio: number; title: number; colW: number }) {
+  // сколько букв названия влезает в строку (text-sm, полужирный: ~7,6 px на букву)
+  const perLine = Math.max(8, Math.floor((colW - 8) / 7.6))
+  const lines = Math.min(2, Math.ceil(title / perLine))
   return (
     <div className="min-w-0">
       <Bone className="rounded-2xl" style={{ aspectRatio: `1 / ${ratio}` }} />
       <div className="px-1 pt-2">
-        <Bone className="mt-0.5 h-4 w-4/5" />
-        <div className="mt-2 flex items-center gap-1.5">
+        <div className="text-sm leading-5 font-semibold">
+          {lines === 2 ? (
+            <>
+              <Line w="95%" />
+              <br />
+              <Line w="55%" />
+            </>
+          ) : (
+            <Line w={`${Math.min(95, Math.round((title / perLine) * 100))}%`} />
+          )}
+        </div>
+        <div className="mt-1.5 flex items-center gap-1.5">
           <Bone className="h-5 w-5 rounded-full" />
-          <Bone className="h-3 w-1/2" />
+          <span className="min-w-0 flex-1 text-xs">
+            <Line w="55%" />
+          </span>
         </div>
       </div>
     </div>
@@ -39,20 +78,22 @@ function PinSkeleton({ ratio }: { ratio: number }) {
 /** Плитка-заглушка: столько же колонок и такие же отступы, как у Masonry */
 export function MasonrySkeleton({ rows = 3 }: { rows?: number }) {
   const n = useColumns()
-  const cols: number[][] = Array.from({ length: n }, () => [])
+  const colW = columnWidth(n)
+  const cols: { r: number; t: number }[][] = Array.from({ length: n }, () => [])
   const heights = new Array(n).fill(0)
   for (let k = 0; k < n * rows; k++) {
     const r = RATIOS[k % RATIOS.length]
     const i = heights.indexOf(Math.min(...heights))
-    cols[i].push(r)
+    cols[i].push({ r, t: TITLES[k % TITLES.length] })
     heights[i] += r + 0.28
   }
   return (
-    <div className="flex items-start gap-2 sm:gap-3" role="status" aria-label="Загрузка">
+    // не короче экрана (см. PostSkeleton)
+    <div className="flex min-h-dvh items-start gap-2 sm:gap-3" role="status" aria-label="Загрузка">
       {cols.map((col, i) => (
         <div key={i} className="flex min-w-0 flex-1 flex-col gap-4 sm:gap-5">
-          {col.map((r, j) => (
-            <PinSkeleton key={j} ratio={r} />
+          {col.map((c, j) => (
+            <PinSkeleton key={j} ratio={c.r} title={c.t} colW={colW} />
           ))}
         </div>
       ))}
@@ -75,28 +116,51 @@ export function ChipsSkeleton() {
   )
 }
 
-/** Шапка профиля: аватар, имя, ник, три счётчика, кнопка, вкладки (как в Profile) */
+/** Шапка профиля — та же разметка, что в Profile: аватар, имя, ник, строка «о себе», три счётчика, кнопка, вкладки */
 export function ProfileHeadSkeleton() {
   return (
-    <section className="mx-auto flex max-w-xl flex-col items-center" role="status" aria-label="Загрузка">
+    <section className="mx-auto flex max-w-xl flex-col items-center text-center" role="status" aria-label="Загрузка">
       <Bone className="h-[88px] w-[88px] rounded-full" />
-      <Bone className="mt-4 h-7 w-48" />
-      <Bone className="mt-2 h-4 w-24" />
+      <h1 className="mt-3 text-2xl font-bold">
+        <Line w="9em" />
+      </h1>
+      <p className="text-sm">
+        <Line w="7em" />
+      </p>
+      <p className="mt-2 max-w-md text-sm leading-relaxed">
+        <Line w="18em" />
+      </p>
       <div className="mt-4 grid w-full max-w-sm grid-cols-3 gap-2">
         {[0, 1, 2].map((i) => (
-          <Bone key={i} className="h-[62px] rounded-2xl" />
+          <div key={i} className="card px-2 py-2.5">
+            <div className="text-lg leading-6 font-bold">
+              <Line w="2em" />
+            </div>
+            <div className="text-xs">
+              <Line w="6em" />
+            </div>
+          </div>
         ))}
       </div>
       <Bone className="mt-4 h-12 w-full max-w-sm rounded-2xl" />
-      <Bone className="mt-5 h-11 w-full max-w-sm rounded-2xl" />
+      <div className="mt-5 w-full max-w-sm">
+        <div className="card grid grid-cols-2 gap-1 p-1">
+          {[0, 1].map((i) => (
+            <div key={i} className="rounded-xl border border-transparent px-2 py-2.5 text-sm font-semibold">
+              <Line w="6em" />
+            </div>
+          ))}
+        </div>
+      </div>
     </section>
   )
 }
 
-/** Страница идеи: картинка слева, справа плашки, название, автор, кнопка (как PostPage) */
+/** Страница идеи — та же разметка, что в PostPage: картинка слева, справа плашки, название, автор, кнопка, отзывы */
 export function PostSkeleton() {
   return (
-    <div className="mx-auto max-w-6xl px-3 pt-3 md:px-6 md:pt-6" role="status" aria-label="Загрузка">
+    // не короче экрана: полоса прокрутки есть сразу и не сдвигает страницу, когда появится настоящая (длинная) страница
+    <div className="mx-auto min-h-dvh max-w-6xl px-3 pt-3 md:px-6 md:pt-6" role="status" aria-label="Загрузка">
       <div className="mb-3 flex items-center gap-2">
         <Bone className="h-10 w-10 rounded-2xl" />
         <div className="flex-1" />
@@ -105,55 +169,97 @@ export function PostSkeleton() {
       <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:gap-8">
         <Bone className="aspect-[4/5] rounded-2xl" />
         <div className="min-w-0">
-          <div className="mb-3 flex gap-2">
+          <div className="mb-3 flex flex-wrap gap-2">
             {[88, 76, 92].map((w) => (
               <Bone key={w} className="h-[26px] rounded-full" style={{ width: w }} />
             ))}
           </div>
-          <Bone className="h-8 w-3/4" />
-          <Bone className="mt-4 h-[70px] rounded-2xl" />
-          <Bone className="mt-5 hidden h-12 rounded-2xl md:block" />
-          <Bone className="mt-8 h-4 w-28" />
-          <Bone className="mt-2 h-[72px] rounded-2xl" />
+          {/* на телефоне название обычно в две строки */}
+          <h1 className="text-2xl leading-8 font-bold md:text-[28px] md:leading-9">
+            <Line w="90%" />
+            <br className="md:hidden" />
+            <span className="md:hidden">
+              <Line w="45%" />
+            </span>
+          </h1>
+          <div className="card mt-4 flex items-center gap-3 p-3">
+            <Bone className="h-11 w-11 rounded-full" />
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-bold">
+                <Line w="9em" />
+              </div>
+              {/* «подписчики · когда»: рядом с кнопкой на узком экране занимает 2–3 строки */}
+              <div className="text-xs">
+                <Line w="90%" />
+                <br className="md:hidden" />
+                <span className="md:hidden">
+                  <Line w="90%" />
+                </span>
+                <br className="sm:hidden" />
+                <span className="sm:hidden">
+                  <Line w="40%" />
+                </span>
+              </div>
+            </div>
+            <Bone className="h-9 w-[124px] rounded-2xl" />
+          </div>
+          <div className="mt-5 hidden gap-2 md:flex">
+            <Bone className="h-12 flex-1 rounded-2xl" />
+            <Bone className="h-12 w-[72px] rounded-2xl" />
+          </div>
+          <div className="section-label mt-8 mb-2">
+            <Line w="7em" />
+          </div>
+          <Bone className="h-[72px] rounded-2xl" />
         </div>
       </div>
     </div>
   )
 }
 
-/** Карточка ленты подписок: автор, картинка, кнопки, название (как FeedCard) */
+/** Карточка ленты подписок — та же разметка, что FeedCard */
 export function FeedCardSkeleton() {
   return (
     <div className="card p-3" aria-hidden>
       <div className="mb-3 flex items-center gap-3">
         <Bone className="h-9 w-9 rounded-full" />
-        <div className="flex-1">
-          <Bone className="h-4 w-32" />
-          <Bone className="mt-1.5 h-3 w-16" />
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-bold">
+            <Line w="9em" />
+          </div>
+          <div className="text-xs">
+            <Line w="5em" />
+          </div>
         </div>
-        <Bone className="h-7 w-20 rounded-full" />
+        <Bone className="h-[26px] w-20 rounded-full" />
       </div>
       <Bone className="aspect-[4/5] rounded-2xl" />
-      <div className="mt-2 flex items-center gap-2">
+      <div className="mt-2 flex items-center gap-1">
         <Bone className="h-10 w-14 rounded-2xl" />
-        <Bone className="h-9 w-36 rounded-2xl" />
+        <Bone className="ml-1 h-9 w-36 rounded-2xl" />
         <div className="flex-1" />
         <Bone className="h-10 w-10 rounded-2xl" />
       </div>
-      <Bone className="mt-2 h-4 w-2/3" />
+      <div className="mt-1 px-1 text-sm font-semibold">
+        <Line w="60%" />
+      </div>
     </div>
   )
 }
 
-/** Сетка папок (как FolderCard) */
+/** Сетка папок — та же разметка, что FolderCard: обложка, название, сколько идей */
 export function FoldersSkeleton({ count = 5 }: { count?: number }) {
   return (
     <div className="grid grid-cols-2 gap-x-3 gap-y-5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5" role="status" aria-label="Загрузка">
       {Array.from({ length: count }, (_, i) => (
         <div key={i}>
           <Bone className="aspect-[4/3] rounded-2xl" />
-          <Bone className="mt-2.5 h-4 w-2/3" />
-          <Bone className="mt-1.5 h-3 w-1/3" />
+          <p className="mt-2 px-1 text-sm font-semibold">
+            <Line w="65%" />
+          </p>
+          <p className="px-1 text-xs">
+            <Line w="40%" />
+          </p>
         </div>
       ))}
     </div>

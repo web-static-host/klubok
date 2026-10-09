@@ -37,12 +37,20 @@ export function Sheet({
       if (dialogs[dialogs.length - 1] === panel.current) closeRef.current()
     }
     document.addEventListener('keydown', onKey)
-    const overflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
+    // прокрутку страницы выключаем; чтобы страница не дёрнулась вправо, когда пропадёт полоса прокрутки,
+    // на её место ставим такой же отступ (окно поверх окна — уже выключено, ничего не трогаем)
+    const body = document.body.style
+    const was = { overflow: body.overflow, paddingRight: body.paddingRight }
+    if (body.overflow !== 'hidden') {
+      const bar = window.innerWidth - document.documentElement.clientWidth
+      if (bar > 0) body.paddingRight = `${bar}px`
+      body.overflow = 'hidden'
+    }
     panel.current?.focus()
     return () => {
       document.removeEventListener('keydown', onKey)
-      document.body.style.overflow = overflow
+      body.overflow = was.overflow
+      body.paddingRight = was.paddingRight
       prev?.focus?.()
     }
   }, [open])

@@ -207,3 +207,43 @@ export function Empty({ icon: Icon, children }: { icon: LucideIcon; children: Re
 export function Logo({ size = 32 }: { size?: number }) {
   return <img src={`${import.meta.env.BASE_URL}logo.svg`} width={size} height={size} alt="" className="rounded-[22%]" />
 }
+
+/** Переключатель — DESIGN_SYSTEM 7.15: подпись и описание слева, справа трек 44×24 (вкл — градиент), бегунок 20×20 */
+export function Toggle({
+  checked,
+  onChange,
+  label,
+  hint,
+  children,
+}: {
+  checked: boolean
+  onChange: (v: boolean) => void
+  label: string
+  hint?: string
+  children?: ReactNode
+}) {
+  return (
+    <label className="card flex cursor-pointer items-center gap-4 px-4 py-3">
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm leading-5 font-medium">{label}</span>
+        {hint && <span className="mt-0.5 block text-xs leading-4 text-muted">{hint}</span>}
+        {children}
+      </span>
+      <input type="checkbox" role="switch" checked={checked} onChange={(e) => onChange(e.target.checked)} className="peer sr-only" />
+      <span
+        aria-hidden
+        className={cx(
+          'relative h-6 w-11 shrink-0 rounded-full transition-colors duration-200 peer-focus-visible:ring-2 peer-focus-visible:ring-accent peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-bg',
+          checked ? 'bg-gradient-to-r from-[#2DD4BF] to-[#06B6D4]' : 'bg-[rgba(71,85,105,.4)]',
+        )}
+      >
+        <span
+          className={cx(
+            'absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.3)] transition-transform duration-200',
+            checked && 'translate-x-5',
+          )}
+        />
+      </span>
+    </label>
+  )
+}

@@ -9,7 +9,7 @@ import { Sheet } from './Sheet'
 import { RulesLink } from './RulesSheet'
 import { useCheckedImages, type CheckedImg } from './useCheckedImages'
 import { warmChecks } from '../supabase'
-import { Button } from './ui'
+import { Button, Toggle } from './ui'
 import { TopicPicker } from './TopicPicker'
 
 const field = 'card w-full px-4 py-3 text-base outline-none placeholder:text-muted disabled:opacity-60'
@@ -409,19 +409,16 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
           />
 
           {images.length >= 2 && (
-            <label className="card flex cursor-pointer items-start gap-3 px-4 py-3">
-              <input
-                type="checkbox"
-                checked={beforeAfter}
-                onChange={(e) => setBeforeAfter(e.target.checked)}
-                className="mt-0.5 h-5 w-5 shrink-0 accent-accent"
-              />
-              <span className="text-sm leading-snug">
-                <b>До и после</b>
-                <span className="block text-xs text-muted">Первые две картинки — до и после. Далее добавьте ещё хотя бы одну картинку</span>
-                {beforeAfter && images.length < 3 && <span className="mt-1 block font-semibold text-accent">Добавьте ещё картинку</span>}
-              </span>
-            </label>
+            <Toggle
+              checked={beforeAfter}
+              onChange={setBeforeAfter}
+              label="До и после"
+              hint="Первые две картинки — до и после. Далее добавьте ещё хотя бы одну картинку"
+            >
+              {beforeAfter && images.length < 3 && (
+                <span className="mt-1 block text-xs font-semibold text-accent">Добавьте ещё картинку</span>
+              )}
+            </Toggle>
           )}
 
           {err && (

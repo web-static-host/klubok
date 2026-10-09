@@ -417,8 +417,8 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
                 className="mt-0.5 h-5 w-5 shrink-0 accent-accent"
               />
               <span className="text-sm leading-snug">
-                <b>Было → стало</b>
-                <span className="block text-xs text-muted">1-я и 2-я картинки встанут рядом. Дальше — как делали, хотя бы одна.</span>
+                <b>До и после</b>
+                <span className="block text-xs text-muted">1-я — до, 2-я — после, дальше — как делали</span>
                 {beforeAfter && images.length < 3 && <span className="mt-1 block font-semibold text-accent">Добавьте ещё картинку</span>}
               </span>
             </label>

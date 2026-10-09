@@ -52,8 +52,8 @@ interface Store {
   /** загрузить своё фото в хранилище (сразу после выбора) */
   uploadImg: (img: Img) => Promise<Img>
   /** проверить загруженную картинку по правилам; нет связи или старая функция — исключение */
-  /** topics — категории, которые ИИ подобрал по картинке (до 5) */
-  checkImg: (img: Img, purpose: 'post' | 'avatar') => Promise<{ ok: boolean; reasons: string[]; topics: string[] }>
+  /** topics — категории, которые ИИ подобрал по картинке (до 5), title — название, которое он предлагает */
+  checkImg: (img: Img, purpose: 'post' | 'avatar') => Promise<{ ok: boolean; reasons: string[]; topics: string[]; title: string }>
   addTry: (postId: string, ok: boolean, text?: string, img?: Img) => Promise<void>
   /** ответ на отзыв; гостю — окно входа */
   addReply: (tryId: string, text: string) => Promise<void>
@@ -484,7 +484,12 @@ export function StoreProvider({
     checkImg: async (img, purpose) => {
       const { data, error } = await supabase.functions.invoke('publish', { body: { action: 'check-image', img, purpose } })
       if (error || typeof data?.ok !== 'boolean') throw new Error('проверка недоступна')
-      return { ok: data.ok, reasons: data.reasons ?? [], topics: Array.isArray(data.topics) ? data.topics : [] }
+      return {
+        ok: data.ok,
+        reasons: data.reasons ?? [],
+        topics: Array.isArray(data.topics) ? data.topics : [],
+        title: typeof data.title === 'string' ? data.title : '',
+      }
     },
     addPost: async (data) => {
       if (!uid) throw new Error('not signed in')

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Check, ChevronLeft, ChevronRight, ImagePlus, Loader2, Plus, TriangleAlert, X } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, ImagePlus, Loader2, Plus, Sparkles, TriangleAlert, X } from 'lucide-react'
 import type { Topic } from '../data/types'
 import { Rejected, useStore } from '../store'
 import { useUi } from '../ui-context'
@@ -28,6 +28,8 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
   const [waiting, setWaiting] = useState(false)
   const [beforeAfter, setBeforeAfter] = useState(false)
   const [title, setTitle] = useState('')
+  // человек сам писал название — подбор по картинке его больше не трогает
+  const [titleTouched, setTitleTouched] = useState(false)
   const [topics, setTopics] = useState<Topic[]>([])
   // человек сам менял категории — подбор по картинкам их больше не трогает
   const [topicsTouched, setTopicsTouched] = useState(false)
@@ -35,6 +37,11 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
   const [busy, setBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const [dragOver, setDragOver] = useState(false)
+  // какая картинка показана крупно
+  const [selRaw, setSel] = useState(0)
+  const sel = Math.min(selRaw, Math.max(0, images.length - 1))
+  const cur = images[sel]
+  const label = (i: number) => (beforeAfter && i < 2 ? (i ? 'После' : 'До') : String(i + 1))
 
   /** Картинки из выбора файла, перетаскивания или вставки (Ctrl+V) */
   const addFiles = async (list: File[]) => {
@@ -76,8 +83,10 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
     setWaiting(false)
     setBeforeAfter(false)
     setTitle('')
+    setTitleTouched(false)
     setTopics([])
     setTopicsTouched(false)
+    setSel(0)
     setErr('')
   }
   const close = () => {
@@ -89,11 +98,15 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
   // категории, которые ИИ подобрал по картинкам (сначала — по первой), до 5; показываем их, пока человек сам не поменял
   const aiTopics = useMemo(() => [...new Set(images.flatMap((i) => i.topics ?? []))].slice(0, 5), [images])
   const shownTopics = topicsTouched ? topics : aiTopics
+  // название, которое ИИ предложил по картинкам (по первой, где оно есть); показываем, пока человек не начал писать своё
+  const aiTitle = images.find((i) => i.title)?.title ?? ''
+  const shownTitle = titleTouched ? title : aiTitle
 
   const publish = async () => {
     setWaiting(false)
     if (!images.length) return setErr('Добавьте хотя бы одну картинку')
-    if (!title.trim()) return setErr('Напишите название')
+    // названия нет, а картинки ещё проверяются — подберётся по ним; публикуем, когда проверка закончится
+    if (!shownTitle.trim() && (titleTouched || !pics.pending)) return setErr('Напишите название')
     // категорий нет, а картинки ещё проверяются — категории подберутся по ним; публикуем, когда проверка закончится
     const list = shownTopics
     if (!list.length && !pics.pending) return setErr('Выберите хотя бы одну категорию')
@@ -108,7 +121,7 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
       const id = await addPost({
         type: beforeAfter ? 'beforeafter' : 'photo',
         topics: list,
-        title: title.trim().replace(/\s+/g, ' '),
+        title: shownTitle.trim().replace(/\s+/g, ' '),
         images: pics.result(),
       })
       setBusy(false)
@@ -162,12 +175,13 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
             Вся идея — на картинках: шаги, состав, подсказки. Без людей в кадре (руки можно). До {MAX} картинок, их будут листать. Перед
             публикацией всё проверяется по <RulesLink className="font-semibold text-accent hover:underline">правилам</RulesLink>.
           </p>
+          {/* большая картинка — того же размера, что и пустое поле, поэтому окно не сжимается; ниже — ряд миниатюр */}
           {images.length === 0 ? (
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
               className={cx(
-                'press flex aspect-[4/3] w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed text-sm font-semibold hover:bg-active md:aspect-[4/5]',
+                'press flex aspect-[4/3] w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed text-sm font-semibold hover:bg-active md:aspect-[4/5] md:max-h-[56dvh]',
                 dragOver ? 'border-accent bg-accent/10' : 'border-line-strong',
               )}
             >
@@ -178,86 +192,125 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
               </span>
             </button>
           ) : (
-            <div
-              className={cx('grid grid-cols-3 gap-2 rounded-2xl', dragOver && 'outline-2 outline-offset-4 outline-accent outline-dashed')}
-            >
-              {images.map((it, i) => (
-                <div key={it.key} className="relative">
-                  <img
-                    src={it.preview.src}
-                    alt={`Картинка ${i + 1}`}
-                    className={cx('aspect-[3/4] w-full rounded-xl bg-elevated object-contain', it.status === 'bad' && 'opacity-40')}
-                  />
-                  {it.status === 'checking' && (
-                    <span className="glass-strong absolute inset-x-1.5 top-1/2 inline-flex -translate-y-1/2 items-center justify-center gap-1.5 rounded-full py-1 text-[11px] font-bold">
-                      <Loader2 size={13} className="animate-spin" /> Проверяем…
-                    </span>
-                  )}
-                  {it.status === 'ok' && (
-                    <span
-                      className="grad absolute top-1/2 left-1/2 inline-flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full opacity-90"
-                      title="Проверено"
-                    >
-                      <Check size={16} strokeWidth={3} />
-                    </span>
-                  )}
-                  {it.status === 'bad' && (
-                    <span
-                      className="absolute inset-x-1.5 top-10 rounded-xl bg-rose-500 px-2 py-1.5 text-center text-[11px] leading-tight font-bold text-white"
-                      role="alert"
-                    >
-                      <TriangleAlert size={13} className="mx-auto mb-0.5" />
-                      {it.reasons?.join('. ') || 'Не прошла проверку'}
-                    </span>
-                  )}
-                  <span className="glass-strong absolute top-1.5 left-1.5 rounded-full px-2 text-[11px] font-bold">
-                    {beforeAfter && i < 2 ? (i ? 'После' : 'До') : i + 1}
-                  </span>
-                  <button
-                    type="button"
-                    aria-label={`Убрать картинку ${i + 1}`}
-                    onClick={() => pics.remove(it.key)}
-                    className="press glass-strong absolute top-1.5 right-1.5 inline-flex h-7 w-7 items-center justify-center rounded-full"
-                  >
-                    <X size={14} strokeWidth={2.4} />
-                  </button>
-                  <div className="absolute inset-x-1.5 bottom-1.5 flex justify-between">
-                    {i > 0 ? (
-                      <button
-                        type="button"
-                        aria-label="Переставить левее"
-                        onClick={() => pics.move(i, -1)}
-                        className="press glass-strong inline-flex h-7 w-7 items-center justify-center rounded-full"
-                      >
-                        <ChevronLeft size={16} />
-                      </button>
-                    ) : (
-                      <span />
-                    )}
-                    {i < images.length - 1 && (
-                      <button
-                        type="button"
-                        aria-label="Переставить правее"
-                        onClick={() => pics.move(i, 1)}
-                        className="press glass-strong inline-flex h-7 w-7 items-center justify-center rounded-full"
-                      >
-                        <ChevronRight size={16} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-              {images.length < MAX && (
+            <>
+              <div
+                className={cx(
+                  'relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-elevated md:aspect-[4/5] md:max-h-[calc(56dvh-96px)]',
+                  dragOver && 'outline-2 outline-offset-4 outline-accent outline-dashed',
+                )}
+              >
+                <img
+                  src={cur.preview.src}
+                  alt={`Картинка ${sel + 1}`}
+                  className={cx('h-full w-full object-contain', cur.status === 'bad' && 'opacity-40')}
+                />
+                <span className="glass-strong absolute top-2 left-2 rounded-full px-2.5 py-0.5 text-xs font-bold">{label(sel)}</span>
                 <button
                   type="button"
-                  onClick={() => fileRef.current?.click()}
-                  className="press flex aspect-[3/4] flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-line-strong text-xs font-semibold hover:bg-active"
+                  aria-label={`Убрать картинку ${sel + 1}`}
+                  onClick={() => pics.remove(cur.key)}
+                  className="press glass-strong absolute top-2 right-2 inline-flex h-9 w-9 items-center justify-center rounded-full"
                 >
-                  <Plus size={22} />
-                  Ещё
+                  <X size={18} strokeWidth={2.4} />
                 </button>
-              )}
-            </div>
+                {cur.status === 'checking' && (
+                  <span className="glass-strong absolute top-1/2 left-1/2 inline-flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold">
+                    <Loader2 size={14} className="animate-spin" /> Проверяем…
+                  </span>
+                )}
+                {cur.status === 'bad' && (
+                  <span
+                    className="absolute inset-x-3 top-1/2 -translate-y-1/2 rounded-xl bg-rose-500 px-3 py-2 text-center text-xs leading-snug font-bold text-white"
+                    role="alert"
+                  >
+                    <TriangleAlert size={16} className="mx-auto mb-1" />
+                    {cur.reasons?.join('. ') || 'Не прошла проверку'}
+                  </span>
+                )}
+                {/* порядок: передвинуть эту картинку левее / правее */}
+                <div className="absolute inset-x-2 bottom-2 flex justify-between">
+                  {sel > 0 ? (
+                    <button
+                      type="button"
+                      aria-label="Переставить левее"
+                      onClick={() => {
+                        pics.move(sel, -1)
+                        setSel(sel - 1)
+                      }}
+                      className="press glass-strong inline-flex h-9 items-center gap-1 rounded-full pr-3 pl-2 text-xs font-bold"
+                    >
+                      <ChevronLeft size={16} /> Раньше
+                    </button>
+                  ) : (
+                    <span />
+                  )}
+                  {sel < images.length - 1 && (
+                    <button
+                      type="button"
+                      aria-label="Переставить правее"
+                      onClick={() => {
+                        pics.move(sel, 1)
+                        setSel(sel + 1)
+                      }}
+                      className="press glass-strong inline-flex h-9 items-center gap-1 rounded-full pr-2 pl-3 text-xs font-bold"
+                    >
+                      Позже <ChevronRight size={16} />
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {images.map((it, i) => (
+                  <button
+                    key={it.key}
+                    type="button"
+                    onClick={() => setSel(i)}
+                    aria-label={`Показать картинку ${i + 1}`}
+                    aria-pressed={i === sel}
+                    className={cx(
+                      'press relative h-20 w-16 overflow-hidden rounded-xl bg-elevated ring-2 ring-offset-2 ring-offset-bg',
+                      i === sel ? 'ring-accent' : 'ring-transparent',
+                    )}
+                  >
+                    <img src={it.preview.src} alt="" className={cx('h-full w-full object-cover', it.status === 'bad' && 'opacity-40')} />
+                    <span className="glass-strong absolute top-1 left-1 rounded-full px-1.5 text-[10px] leading-4 font-bold">
+                      {label(i)}
+                    </span>
+                    <span className="absolute right-1 bottom-1">
+                      {it.status === 'checking' && (
+                        <span className="glass-strong inline-flex h-5 w-5 items-center justify-center rounded-full" title="Проверяем">
+                          <Loader2 size={12} className="animate-spin" />
+                        </span>
+                      )}
+                      {it.status === 'ok' && (
+                        <span className="grad inline-flex h-5 w-5 items-center justify-center rounded-full" title="Проверено">
+                          <Check size={12} strokeWidth={3} />
+                        </span>
+                      )}
+                      {it.status === 'bad' && (
+                        <span
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-white"
+                          title="Не прошла"
+                        >
+                          <TriangleAlert size={12} />
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                ))}
+                {images.length < MAX && (
+                  <button
+                    type="button"
+                    onClick={() => fileRef.current?.click()}
+                    aria-label="Добавить ещё картинки"
+                    className="press flex h-20 w-16 flex-col items-center justify-center gap-0.5 rounded-xl border border-dashed border-line-strong text-[11px] font-semibold hover:bg-active"
+                  >
+                    <Plus size={18} />
+                    Ещё
+                  </button>
+                )}
+              </div>
+            </>
           )}
           <input
             ref={fileRef}
@@ -270,6 +323,38 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
               e.target.value = ''
               if (files.length) addFiles(files)
             }}
+          />
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-4">
+          <input
+            value={shownTitle}
+            onChange={(e) => {
+              setTitle(e.target.value)
+              setTitleTouched(true)
+            }}
+            maxLength={80}
+            placeholder={
+              pics.pending && !titleTouched ? 'Подберём название по картинке — или напишите своё' : 'Название, например «Сырники без муки»'
+            }
+            aria-label="Название"
+            className={field}
+          />
+          {!titleTouched && aiTitle && (
+            <p className="-mt-2 inline-flex items-center gap-1.5 text-xs text-muted">
+              <Sparkles size={13} className="text-accent" /> Название подобрано по картинке — можно поменять
+            </p>
+          )}
+
+          <TopicPicker
+            value={shownTopics}
+            onChange={(v) => {
+              setTopics(v)
+              setTopicsTouched(true)
+              setErr('')
+            }}
+            auto={!topicsTouched}
+            max={MAX_TOPICS}
           />
 
           {images.length >= 2 && (
@@ -287,28 +372,6 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
               </span>
             </label>
           )}
-        </div>
-
-        <div className="flex min-w-0 flex-col gap-4">
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            maxLength={80}
-            placeholder="Название, например «Сырники без муки»"
-            aria-label="Название"
-            className={field}
-          />
-
-          <TopicPicker
-            value={shownTopics}
-            onChange={(v) => {
-              setTopics(v)
-              setTopicsTouched(true)
-              setErr('')
-            }}
-            auto={!topicsTouched}
-            max={MAX_TOPICS}
-          />
 
           {err && (
             <p className="rounded-xl bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-500" role="alert">
@@ -319,7 +382,9 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
             {busy ? 'Публикуем…' : waiting ? `Опубликуем, как только проверим картинки (осталось ${pics.pending})` : 'Опубликовать'}
           </Button>
           {pics.pending > 0 && !waiting && (
-            <p className="-mt-2 text-center text-xs">Картинки проверяются, пока вы пишете название. Категории подберутся по ним сами.</p>
+            <p className="-mt-2 text-center text-xs">
+              Картинки проверяются. Название и категории подберутся по ним сами — их можно поменять.
+            </p>
           )}
         </div>
       </form>

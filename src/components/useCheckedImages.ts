@@ -14,6 +14,8 @@ export interface CheckedImg {
   reasons?: string[]
   /** категории, которые ИИ подобрал по этой картинке */
   topics?: string[]
+  /** название, которое ИИ предложил по этой картинке */
+  title?: string
 }
 
 export function useCheckedImages(purpose: 'post' | 'avatar') {
@@ -35,7 +37,7 @@ export function useCheckedImages(purpose: 'post' | 'avatar') {
           const uploaded = await up
           patch(it.key, { uploaded })
           const r = await checkImg(uploaded, purpose)
-          patch(it.key, r.ok ? { status: 'ok', topics: r.topics } : { status: 'bad', reasons: r.reasons })
+          patch(it.key, r.ok ? { status: 'ok', topics: r.topics, title: r.title } : { status: 'bad', reasons: r.reasons })
         } catch {
           patch(it.key, { status: 'error' })
         }

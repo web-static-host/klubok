@@ -174,6 +174,8 @@ export interface Meta {
   time: '' | 'быстро' | 'около часа' | 'долго'
   /** подходящие категории сайта (id из TOPICS), до 5 — сайт ставит их автору в форме, автор может поправить */
   topics: string[]
+  /** название для идеи, как заголовок поста — сайт подставляет его автору в форме, автор может переписать */
+  title: string
 }
 /** Категории сайта — как TOPICS в src/data/types.ts (менять вместе) */
 const TOPICS: [string, string][] = [
@@ -224,6 +226,7 @@ export function parseMeta(v: Record<string, unknown>): Meta {
     difficulty: (['легко', 'средне', 'сложно'] as const).find((x) => x === difficulty) ?? '',
     time: (['быстро', 'около часа', 'долго'] as const).find((x) => time.startsWith(x)) ?? '',
     topics: topicIds(v.topics),
+    title: String(v.title ?? '').replace(/["«»“”]/g, '').replace(/\s+/g, ' ').trim().replace(/[.!]+$/, '').slice(0, 80),
   }
 }
 export const emptyMeta = (): Meta => parseMeta({})
@@ -236,6 +239,7 @@ export function mergeMeta(metas: Meta[]): Meta {
     m.kind ||= x.kind
     m.difficulty ||= x.difficulty
     m.time ||= x.time
+    m.title ||= x.title
     m.topics = [...new Set([...m.topics, ...x.topics])].slice(0, 5)
     for (const k of LISTS) m[k] = [...new Set([...m[k], ...x[k]])]
   }
@@ -349,6 +353,7 @@ ok = false ставь только при явном нарушении прав
  "related": ["3–6 общих тем, по которым человеку можно посоветовать похожее: морепродукты, блюда на сковороде, ужин за 30 минут, хранение на кухне"],
  "difficulty": "легко, средне или сложно",
  "time": "быстро, около часа или долго",
+ "title": "название идеи для людей, 2–7 слов, с большой буквы, без кавычек и точки, как заголовок поста: «Сырники без муки», «Органайзер для проводов из прищепок»",
  "topics": ["1–5 подходящих категорий сайта, только из этого списка, пиши id: ${TOPICS.map(([id, label]) => `${id} — ${label}`).join(', ')}"]}`,
       'Проверь картинку по правилам и опиши её.',
       [id],
@@ -536,7 +541,7 @@ export async function handle(req: Request): Promise<Response> {
       if (!ownImage(img, uid)) return json({ ok: false, reasons: ['Неверная картинка'] }, 400)
       const c = await checkImage(img, uid, body.purpose === 'avatar')
       // topics — категории, которые ИИ предлагает по этой картинке (форма ставит их сама)
-      return json(c.ok ? { ok: true, ai: c.ai, topics: c.meta.topics } : { ok: false, reasons: c.reasons })
+      return json(c.ok ? { ok: true, ai: c.ai, topics: c.meta.topics, title: c.meta.title } : { ok: false, reasons: c.reasons })
     }
 
     case 'post': {

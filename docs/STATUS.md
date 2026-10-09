@@ -74,6 +74,7 @@
 - Функция: `.github/workflows/deploy-function.yml` — при изменении `supabase/functions/**` в `main` GitHub сам выкладывает `publish` (`supabase functions deploy publish --use-api --no-verify-jwt`).
 - База: `.github/workflows/migrate.yml` + `.github/scripts/migrate.mjs` — новые файлы `supabase/migrations/NNN_*.sql` запускаются сами, каждый один раз (учёт — `klubok_admin.migrations`, схема не видна сайту). 002–005 при первом запуске отмечаются как сделанные вручную. Обновления писать так, чтобы повторный запуск ничего не ломал (`if not exists`).
 - Обе можно запустить вручную: GitHub → Actions → нужная → Run workflow.
+- Работает с 9 октября: ключ добавлен, первым запуском применено обновление 006 и выложена функция (удаление идеи, проверка ника). Проверено: ник `klubok_tester` проходит, ник с «tme…» и «пишите в тг» — нет.
 - Нужен секрет `SUPABASE_ACCESS_TOKEN` в GitHub: ключ доступа Supabase на проект Клубок (Edge Functions и SQL — запись). Без секрета шаги пропускаются. У ключа есть срок — когда истечёт, создать новый и заменить секрет.
 - Репозиторий открытый: журналы GitHub видят все, поэтому в них не печатаются данные из базы.
 

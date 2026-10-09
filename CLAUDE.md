@@ -22,4 +22,4 @@
 - Токены цветов — CSS-переменные в `src/index.css`.
 - Данные — база Supabase (`supabase/schema.sql`), все запросы — в `src/store.tsx`. Тема — в localStorage.
 - Перед коммитом: `npx tsc -b && npm run build`. Форматирование: `npx prettier --write "src/**/*.{ts,tsx}"`.
-- Публикация — автоматически из ветки `main` через GitHub Actions.
+- Публикация — автоматически из ветки `main` через GitHub Actions. Функция `publish` и новые `supabase/migrations/NNN_*.sql` тоже выкладываются в Supabase сами (секрет `SUPABASE_ACCESS_TOKEN`); владельцу ничего вручную запускать не нужно. Обновления базы — только такие, что повторный запуск ничего не ломает.

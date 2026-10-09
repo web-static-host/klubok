@@ -1,0 +1,15 @@
+# Уменьшенные копии для старых картинок (только по запуску вручную). Новые картинки получают копию сами при публикации.
+name: Копии картинок для ленты
+
+on:
+  workflow_dispatch:
+
+jobs:
+  thumbs:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install pillow
+      - run: python3 .github/scripts/thumbs.py

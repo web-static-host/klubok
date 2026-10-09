@@ -705,6 +705,35 @@ export async function handle(req: Request): Promise<Response> {
     return json({ ok: false, reasons: ['Неверный запрос'] }, 400)
   }
 
+  // служебное: уменьшенная копия для старой картинки (делает GitHub — .github/scripts/thumbs.py).
+  // Пускаем, только если прислан действующий ключ доступа Supabase к этому проекту (он есть только в секретах GitHub).
+  if (body.action === 'admin-thumb') {
+    const ref = new URL(SB_URL).hostname.split('.')[0]
+    const check = await fetch(`https://api.supabase.com/v1/projects/${ref}/functions`, {
+      headers: { Authorization: `Bearer ${req.headers.get('x-admin-token') ?? ''}` },
+    })
+    await check.body?.cancel()
+    if (!check.ok) return json({ ok: false, reasons: ['Нет доступа'] }, 403)
+    const src = canon({ src: String(body.src ?? ''), ratio: 1 }).src
+    if (!src.startsWith(PUBLIC_PREFIX) || !src.endsWith('.jpg') || src.endsWith('_s.jpg') || typeof body.thumb !== 'string')
+      return json({ ok: false, reasons: ['Неверная картинка'] }, 400)
+    const bytes = Uint8Array.from(atob(body.thumb), (c) => c.charCodeAt(0))
+    if (bytes.length > 400_000) return json({ ok: false, reasons: ['Слишком большая копия'] }, 400)
+    const path = src.slice(PUBLIC_PREFIX.length).replace(/\.jpg$/, '_s.jpg')
+    const { error } = await admin.storage
+      .from('images')
+      .upload(path, bytes, { contentType: 'image/jpeg', cacheControl: '31536000', upsert: true })
+    if (error) return json({ ok: false, reasons: [error.message] }, 500)
+    const thumb = PUBLIC_PREFIX + path
+    // прописываем копию во все идеи с этой картинкой
+    const { data: posts } = await admin.from('posts').select('id, images').contains('images', [{ src }])
+    for (const p of posts ?? []) {
+      const images = (p.images as ImgIn[]).map((i) => (i.src === src ? { ...i, thumb } : i))
+      await admin.from('posts').update({ images }).eq('id', p.id)
+    }
+    return json({ ok: true, posts: posts?.length ?? 0 })
+  }
+
   // разогрев: сайт зовёт, когда открывают «Новая идею», — функция запускается и заранее входит в ГигаЧат,
   // чтобы первая проверка картинки не ждала запуска и входа. Вход запоминается на ~30 минут, так что лишних входов нет.
   if (body.action === 'warm') {

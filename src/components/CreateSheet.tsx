@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Check, ChevronLeft, ChevronRight, ImagePlus, Loader2, Plus, Sparkles, TriangleAlert, X } from 'lucide-react'
+import { ArrowLeftRight, Check, ChevronLeft, ChevronRight, ImagePlus, Loader2, Plus, Sparkles, TriangleAlert, X } from 'lucide-react'
 import type { Topic } from '../data/types'
 import { Rejected, useStore } from '../store'
 import { useUi } from '../ui-context'
@@ -44,6 +44,8 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
   const [selRaw, setSel] = useState(0)
   const sel = Math.min(selRaw, Math.max(0, images.length - 1))
   const cur = images[sel]
+  // «До и после» включено и выбрана 1-я или 2-я — крупно показываем обе рядом
+  const pairView = beforeAfter && images.length >= 2 && sel < 2
   const label = (i: number) => (beforeAfter && i < 2 ? (i ? 'После' : 'До') : String(i + 1))
 
   /** Картинки из выбора файла, перетаскивания или вставки (Ctrl+V) */
@@ -211,65 +213,116 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
                   dragOver && 'outline-2 outline-offset-4 outline-accent outline-dashed',
                 )}
               >
-                <img
-                  src={cur.preview.src}
-                  alt={`Картинка ${sel + 1}`}
-                  className={cx('h-full w-full object-contain', cur.status === 'bad' && 'opacity-40')}
-                />
-                <span className="glass-strong absolute top-2 left-2 rounded-full px-2.5 py-0.5 text-xs font-bold">{label(sel)}</span>
-                <button
-                  type="button"
-                  aria-label={`Убрать картинку ${sel + 1}`}
-                  onClick={() => pics.remove(cur.key)}
-                  className="press glass-strong absolute top-2 right-2 inline-flex h-9 w-9 items-center justify-center rounded-full"
-                >
-                  <X size={18} strokeWidth={2.4} />
-                </button>
-                {cur.status === 'checking' && (
-                  <span className="glass-strong absolute top-1/2 left-1/2 inline-flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold">
-                    <Loader2 size={14} className="animate-spin" /> Проверяем…
-                  </span>
-                )}
-                {cur.status === 'bad' && (
-                  <span
-                    className="absolute inset-x-3 top-1/2 -translate-y-1/2 rounded-xl bg-rose-500 px-3 py-2 text-center text-xs leading-snug font-bold text-white"
-                    role="alert"
-                  >
-                    <TriangleAlert size={16} className="mx-auto mb-1" />
-                    {cur.reasons?.join('. ') || 'Не прошла проверку'}
-                  </span>
-                )}
-                {/* порядок: передвинуть эту картинку левее / правее */}
-                <div className="absolute inset-x-2 bottom-2 flex justify-between">
-                  {sel > 0 ? (
+                {pairView ? (
+                  // «До и после»: первые две картинки рядом — как они встанут в готовой идее
+                  <div className="grid h-full grid-cols-2 gap-0.5">
+                    {images.slice(0, 2).map((it, i) => (
+                      <div key={it.key} className="relative min-w-0">
+                        <img
+                          src={it.preview.src}
+                          alt={i ? 'После' : 'До'}
+                          className={cx('h-full w-full object-contain', it.status === 'bad' && 'opacity-40')}
+                        />
+                        <span className="glass-strong absolute bottom-2 left-2 rounded-full px-3 py-1 text-xs font-bold">
+                          {i ? 'После' : 'До'}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label={`Убрать картинку «${i ? 'После' : 'До'}»`}
+                          onClick={() => pics.remove(it.key)}
+                          className="press glass-strong absolute top-2 right-2 inline-flex h-8 w-8 items-center justify-center rounded-full"
+                        >
+                          <X size={16} strokeWidth={2.4} />
+                        </button>
+                        {it.status === 'checking' && (
+                          <span className="glass-strong absolute top-1/2 left-1/2 inline-flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold">
+                            <Loader2 size={13} className="animate-spin" /> Проверяем…
+                          </span>
+                        )}
+                        {it.status === 'bad' && (
+                          <span
+                            className="absolute inset-x-2 top-1/2 -translate-y-1/2 rounded-xl bg-rose-500 px-2 py-1.5 text-center text-[11px] leading-tight font-bold text-white"
+                            role="alert"
+                          >
+                            {it.reasons?.join('. ') || 'Не прошла проверку'}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                    {/* поменять «до» и «после» местами — кружок на шве между картинками */}
                     <button
                       type="button"
-                      aria-label="Переставить левее"
-                      onClick={() => {
-                        pics.move(sel, -1)
-                        setSel(sel - 1)
-                      }}
-                      className="press glass-strong inline-flex h-9 items-center gap-1 rounded-full pr-3 pl-2 text-xs font-bold"
+                      onClick={() => pics.move(0, 1)}
+                      aria-label="Поменять «до» и «после» местами"
+                      title="Поменять местами"
+                      className="press glass-strong absolute top-1/2 left-1/2 inline-flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full shadow"
                     >
-                      <ChevronLeft size={16} /> Раньше
+                      <ArrowLeftRight size={16} />
                     </button>
-                  ) : (
-                    <span />
-                  )}
-                  {sel < images.length - 1 && (
+                  </div>
+                ) : (
+                  <>
+                    <img
+                      src={cur.preview.src}
+                      alt={`Картинка ${sel + 1}`}
+                      className={cx('h-full w-full object-contain', cur.status === 'bad' && 'opacity-40')}
+                    />
+                    <span className="glass-strong absolute top-2 left-2 rounded-full px-2.5 py-0.5 text-xs font-bold">{label(sel)}</span>
                     <button
                       type="button"
-                      aria-label="Переставить правее"
-                      onClick={() => {
-                        pics.move(sel, 1)
-                        setSel(sel + 1)
-                      }}
-                      className="press glass-strong inline-flex h-9 items-center gap-1 rounded-full pr-2 pl-3 text-xs font-bold"
+                      aria-label={`Убрать картинку ${sel + 1}`}
+                      onClick={() => pics.remove(cur.key)}
+                      className="press glass-strong absolute top-2 right-2 inline-flex h-9 w-9 items-center justify-center rounded-full"
                     >
-                      Позже <ChevronRight size={16} />
+                      <X size={18} strokeWidth={2.4} />
                     </button>
-                  )}
-                </div>
+                    {cur.status === 'checking' && (
+                      <span className="glass-strong absolute top-1/2 left-1/2 inline-flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold">
+                        <Loader2 size={14} className="animate-spin" /> Проверяем…
+                      </span>
+                    )}
+                    {cur.status === 'bad' && (
+                      <span
+                        className="absolute inset-x-3 top-1/2 -translate-y-1/2 rounded-xl bg-rose-500 px-3 py-2 text-center text-xs leading-snug font-bold text-white"
+                        role="alert"
+                      >
+                        <TriangleAlert size={16} className="mx-auto mb-1" />
+                        {cur.reasons?.join('. ') || 'Не прошла проверку'}
+                      </span>
+                    )}
+                    {/* порядок: передвинуть эту картинку левее / правее */}
+                    <div className="absolute inset-x-2 bottom-2 flex justify-between">
+                      {sel > 0 ? (
+                        <button
+                          type="button"
+                          aria-label="Переставить левее"
+                          onClick={() => {
+                            pics.move(sel, -1)
+                            setSel(sel - 1)
+                          }}
+                          className="press glass-strong inline-flex h-9 items-center gap-1 rounded-full pr-3 pl-2 text-xs font-bold"
+                        >
+                          <ChevronLeft size={16} /> Раньше
+                        </button>
+                      ) : (
+                        <span />
+                      )}
+                      {sel < images.length - 1 && (
+                        <button
+                          type="button"
+                          aria-label="Переставить правее"
+                          onClick={() => {
+                            pics.move(sel, 1)
+                            setSel(sel + 1)
+                          }}
+                          className="press glass-strong inline-flex h-9 items-center gap-1 rounded-full pr-2 pl-3 text-xs font-bold"
+                        >
+                          Позже <ChevronRight size={16} />
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
               <div className="flex flex-wrap gap-2">
                 {images.map((it, i) => (

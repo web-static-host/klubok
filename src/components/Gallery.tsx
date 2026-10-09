@@ -41,7 +41,7 @@ export function Gallery({ post, maxRatio = 1.6, className }: { post: Post; maxRa
       >
         {slides.map((slide, k) =>
           slide.length === 2 ? (
-            // «до» и «после» рядом — каждая половина заполняется целиком (это фото, а не картинки с текстом)
+            // «до» и «после» рядом — каждая видна целиком, без обрезки
             <div key={k} className="grid w-full shrink-0 snap-center grid-cols-2 gap-0.5" style={{ aspectRatio: `1 / ${ratio}` }}>
               {slide.map((i) => (
                 <button
@@ -51,7 +51,7 @@ export function Gallery({ post, maxRatio = 1.6, className }: { post: Post; maxRa
                   className="relative"
                   aria-label={`${i ? 'После' : 'До'} — открыть`}
                 >
-                  <Picture fill img={imgs[i]} w={600} className="h-full" alt={`${post.title} — ${i ? 'после' : 'до'}`} />
+                  <Picture fill contain img={imgs[i]} w={600} className="h-full" alt={`${post.title} — ${i ? 'после' : 'до'}`} />
                   <span className="glass-strong pointer-events-none absolute bottom-2 left-2 rounded-full px-3 py-1 text-xs font-bold">
                     {i ? 'После' : 'До'}
                   </span>

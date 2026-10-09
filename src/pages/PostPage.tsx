@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, BadgeCheck, Bookmark, ChefHat, CircleCheck, Link2, SearchX, ThumbsDown, ThumbsUp, Trash2 } from 'lucide-react'
+import { ArrowLeft, Bookmark, ChefHat, CircleCheck, Link2, SearchX, ThumbsDown, ThumbsUp, Trash2 } from 'lucide-react'
 import type { AiMeta, Post, Try } from '../data/types'
 import { topicLabel } from '../data/types'
 import { Rejected, useStore } from '../store'
@@ -123,12 +123,6 @@ export function PostPage() {
               </div>
             )}
             <div className="mb-3 flex flex-wrap gap-2">
-              <span
-                className="inline-flex items-center gap-1 rounded-full border chip-on px-2.5 py-1 text-xs font-semibold"
-                title="Первая публикация этой идеи"
-              >
-                <BadgeCheck size={14} className="text-accent" strokeWidth={2.4} /> Оригинал
-              </span>
               {p.topics.map((t) => (
                 <Link
                   key={t}

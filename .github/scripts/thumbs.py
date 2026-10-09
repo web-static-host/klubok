@@ -31,7 +31,7 @@ for src in sorted(todo):
         im.save(out, 'JPEG', quality=85, optimize=True, progressive=True)
         body = json.dumps({'action': 'admin-thumb', 'src': src, 'thumb': base64.b64encode(out.getvalue()).decode()}).encode()
         res = json.load(urllib.request.urlopen(urllib.request.Request(FN, data=body, headers={'Content-Type': 'application/json', 'x-admin-token': TOKEN})))
-        if not res.get('ok'):
+        if not res.get('ok') or not res.get('posts'):
             raise RuntimeError(res)
         done += 1
         before += len(raw)

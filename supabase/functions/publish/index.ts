@@ -726,7 +726,9 @@ export async function handle(req: Request): Promise<Response> {
     if (error) return json({ ok: false, reasons: [error.message] }, 500)
     const thumb = PUBLIC_PREFIX + path
     // прописываем копию во все идеи с этой картинкой
-    const { data: posts } = await admin.from('posts').select('id, images').contains('images', [{ src }])
+    // jsonb-массив ищем строкой JSON (.contains с массивом объектов формирует запрос для обычных массивов и не находит)
+    const { data: posts, error: findError } = await admin.from('posts').select('id, images').filter('images', 'cs', JSON.stringify([{ src }]))
+    if (findError) return json({ ok: false, reasons: [findError.message] }, 500)
     for (const p of posts ?? []) {
       const images = (p.images as ImgIn[]).map((i) => (i.src === src ? { ...i, thumb } : i))
       await admin.from('posts').update({ images }).eq('id', p.id)

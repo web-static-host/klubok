@@ -1,0 +1,22 @@
+# Заново разобрать одну идею после публикации (только по запуску вручную): когда проверку улучшили.
+name: Перепроверка идеи
+
+on:
+  workflow_dispatch:
+    inputs:
+      post:
+        description: 'id идеи'
+        required: true
+
+jobs:
+  recheck:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      POST_ID: ${{ inputs.post }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node .github/scripts/recheck.mjs

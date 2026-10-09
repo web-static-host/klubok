@@ -282,6 +282,8 @@ interface Verdict {
   meta: Meta
   text: string
   description: string
+  /** только в подробном разборе: что нашёл отдельный вопрос «есть ли мат» (пусто — ничего) */
+  swear?: string[]
 }
 
 /** Ответ модели → объект; если модель отказалась отвечать (фильтр GigaChat) — это нарушение */
@@ -413,6 +415,45 @@ function prepareImage(src: string, tm: Timing): Promise<Prepared> {
   })
 }
 
+/** Служебные действия пускаем, только если прислан действующий ключ доступа Supabase к этому проекту (он есть только в секретах GitHub) */
+async function isAdmin(req: Request): Promise<boolean> {
+  const ref = new URL(SB_URL).hostname.split('.')[0]
+  const check = await fetch(`https://api.supabase.com/v1/projects/${ref}/functions`, {
+    headers: { Authorization: `Bearer ${req.headers.get('x-admin-token') ?? ''}` },
+  })
+  await check.body?.cancel()
+  return check.ok
+}
+
+/**
+ * Отдельный короткий вопрос «есть ли на картинке мат» (по уже загруженной в ГигаЧат картинке).
+ * В подробном разборе ИИ переписывает только крупный текст и пропускает мелкие надписи — узкий вопрос ловит надёжнее.
+ * Ответ короткий (~1,5–2 с). ИИ недоступен — пусто: разбор не срываем.
+ */
+async function findSwear(id: string, tm: Timing): Promise<string[]> {
+  const st: Timing = {}
+  try {
+    const v = await gcAsk(
+      `Ты ищешь на картинке мат. Внимательно осмотри ВСЮ картинку, включая мелкие надписи, текст от руки, слова поверх других элементов, по краям и в углах.
+Ищи мат и грубую брань, в том числе замаскированные (буквы заменены символами или латиницей, разбиты точками или пробелами), и оскорбления.
+Обычный текст рецептов, интерфейсов, подписей — не нарушение. Не уверен — ok = true.
+Само слово не пиши. Ответь только JSON без пояснений:
+{"ok": true, если мата нет, или false, "reasons": ["мат: где на картинке, коротко — например «мат: надпись красным слева вверху»"]}`,
+      'Есть ли на этой картинке мат?',
+      [id],
+      true,
+      st,
+    )
+    return v.ok ? [] : v.reasons.length ? v.reasons : ['Мат на картинке']
+  } catch (e) {
+    console.error('проверка на мат не удалась:', e instanceof Error ? e.message : e)
+    return []
+  } finally {
+    tm.swear_ai = st.ai ?? 0
+    tm.swear_out = st.tokens_out ?? 0
+  }
+}
+
 /**
  * Картинка → ГигаЧат. Время ответа почти целиком зависит от того, сколько он пишет (~0,05 с на токен), поэтому два вида:
  * quick — сразу при загрузке: можно ли по правилам, есть ли люди, название и категории (коротко, ~3–4 с);
@@ -476,7 +517,7 @@ ok = false ставь только при явном нарушении прав
           [id],
           true,
           tm,
-        )
+        ).then(async (v) => ({ ...v, swear: await findSwear(id, tm) }))
   } finally {
     gcFetch(`${GC_API}/files/${id}/delete`, { method: 'POST', headers: { Authorization: `Bearer ${await gcToken()}` } }).catch(() => {})
   }
@@ -577,7 +618,8 @@ async function checkImage(img: ImgIn, uid: string, allowPeople: boolean, tm: Tim
  * Строгая проверка текста с картинки (ссылки, мат): нашлось — идея скрывается для всех, автор видит причину.
  * Картинки — по одной (у ИИ один поток); функция живёт ограниченное время, поэтому не дольше ~100 с.
  */
-async function describePost(postId: string, uid: string, images: ImgIn[], quick: Meta, words: string[] = []) {
+/** force — разобрать заново, даже если картинку уже разбирали (перепроверка старых идей); timings — сюда складываются замеры по картинкам */
+async function describePost(postId: string, uid: string, images: ImgIn[], quick: Meta, words: string[] = [], force = false, timings?: Timing[]) {
   const start = performance.now()
   const metas: Meta[] = []
   const texts: string[] = []
@@ -602,16 +644,18 @@ async function describePost(postId: string, uid: string, images: ImgIn[], quick:
     const path = img.src.slice(PUBLIC_PREFIX.length)
     const { data: saved } = await admin.from('image_checks').select('meta, ai_text').eq('path', path).maybeSingle()
     // эту картинку уже разбирали подробно (публиковали раньше) — берём готовое
-    if (saved?.meta?.idea) {
+    if (saved?.meta?.idea && !force) {
       metas.push(parseMeta(saved.meta))
       if (saved.ai_text) texts.push(saved.ai_text)
       continue
     }
     try {
-      const v = await aiCheckImage(img.src, true, {}, undefined, 'full')
+      const tm: Timing = {}
+      timings?.push(tm)
+      const v = await aiCheckImage(img.src, true, tm, undefined, 'full')
       const meta: Meta = { ...v.meta, title: saved?.meta?.title ?? '', topics: topicIds(saved?.meta?.topics) }
       const text = [v.description, v.text].filter(Boolean).join('. ')
-      const found = imageTextCheck(v.text)
+      const found = [...imageTextCheck(v.text), ...(v.swear ?? [])]
       // плохая картинка отмечается и в проверках — с ней больше не опубликуют
       await admin
         .from('image_checks')
@@ -737,14 +781,9 @@ export async function handle(req: Request): Promise<Response> {
   }
 
   // служебное: уменьшенная копия для старой картинки (делает GitHub — .github/scripts/thumbs.py).
-  // Пускаем, только если прислан действующий ключ доступа Supabase к этому проекту (он есть только в секретах GitHub).
+  // Пускаем только с ключом доступа Supabase (isAdmin).
   if (body.action === 'admin-thumb') {
-    const ref = new URL(SB_URL).hostname.split('.')[0]
-    const check = await fetch(`https://api.supabase.com/v1/projects/${ref}/functions`, {
-      headers: { Authorization: `Bearer ${req.headers.get('x-admin-token') ?? ''}` },
-    })
-    await check.body?.cancel()
-    if (!check.ok) return json({ ok: false, reasons: ['Нет доступа'] }, 403)
+    if (!(await isAdmin(req))) return json({ ok: false, reasons: ['Нет доступа'] }, 403)
     const src = canon({ src: String(body.src ?? ''), ratio: 1 }).src
     if (!src.startsWith(PUBLIC_PREFIX) || !src.endsWith('.jpg') || src.endsWith('_s.jpg') || typeof body.thumb !== 'string')
       return json({ ok: false, reasons: ['Неверная картинка'] }, 400)
@@ -765,6 +804,18 @@ export async function handle(req: Request): Promise<Response> {
       await admin.from('posts').update({ images }).eq('id', p.id)
     }
     return json({ ok: true, posts: posts?.length ?? 0 })
+  }
+
+  // служебное: заново разобрать идею после публикации (когда проверку улучшили) — .github/scripts/recheck.mjs. Отвечает только числами.
+  if (body.action === 'admin-recheck') {
+    if (!(await isAdmin(req))) return json({ ok: false, reasons: ['Нет доступа'] }, 403)
+    const { data: p } = await admin.from('posts').select('id, author_id, images, ai_meta, hidden').eq('id', String(body.post ?? '')).maybeSingle()
+    if (!p) return json({ ok: false, reasons: ['Нет такой идеи'] }, 404)
+    const t = performance.now()
+    const timings: Timing[] = []
+    await describePost(p.id, p.author_id, p.images as ImgIn[], parseMeta(p.ai_meta ?? {}), [], true, timings)
+    const { data: after } = await admin.from('posts').select('hidden').eq('id', p.id).single()
+    return json({ ok: true, was_hidden: p.hidden, hidden: after?.hidden, total: ms(t), images: timings })
   }
 
   // разогрев: сайт зовёт, когда открывают «Новая идею», — функция запускается и заранее входит в ГигаЧат,

@@ -303,8 +303,21 @@ const PEOPLE_REASON = 'На картинках не должно быть люд
  * Про людей — наша понятная фраза; прочие служебные — убираем (останется общая «нарушает правила»).
  */
 function humanReason(r: string): string {
-  if (!/\b(people|ok|true|false|reasons|json)\b/i.test(r)) return r.trim()
-  return /people/i.test(r) ? PEOPLE_REASON : ''
+  r = r.trim()
+  if (/\b(people|ok|true|false|reasons|json)\b/i.test(r)) return /people/i.test(r) ? PEOPLE_REASON : ''
+  // ИИ, отказывая, иногда переписывает строку из списка правил («мат и грубая брань…»), хотя этого на картинке нет, — без цитаты не верим
+  if (isRuleCopy(r)) return ''
+  return r.charAt(0).toUpperCase() + r.slice(1)
+}
+// строки правил (RULES объявлены ниже — считаем при первом обращении)
+let ruleLines: string[] | undefined
+function isRuleCopy(r: string) {
+  if (/[«"„“]/.test(r)) return false
+  ruleLines ??= RULES.split('\n')
+    .filter((l) => l.startsWith('—'))
+    .map((l) => norm(l.slice(1).replace(/\(.*?\)/g, '')))
+  const x = norm(r).replace(/[.;:]+$/, '')
+  return x.length >= 12 && ruleLines.some((l) => l.startsWith(x.slice(0, 20)) || x.startsWith(l.slice(0, 20)))
 }
 
 async function gcAsk(system: string, user: string, attachments: string[] = [], allowPeopleNow = false, tm?: Timing): Promise<Verdict> {
@@ -431,6 +444,7 @@ ${
               : 'Отдельно определи, кто на картинке, и запиши в поле who ровно одно из: «никого», «только руки», «персонаж-не-человек», «нарисованный человек», «человек на фото». «персонаж-не-человек» — это ожившая еда или предметы с лицами, руками и ногами (например, картофелина в плаще), мультяшные животные, маскоты, игрушки, а также иконки и человечки-значки. «нарисованный человек» — именно человек, нарисованный (мультяшный, аниме, иллюстрация). Про людей и персонажей пиши только в who, не в reasons.'
           }
 Внимательно посмотри на весь текст на картинке: ссылка, адрес сайта, @ник, телефон, почта, QR-код, призыв написать или купить — это нарушение (ok = false).
+В reasons пиши только то, что действительно есть на ЭТОЙ картинке, и что именно: «ссылка: „vk.com/…"», «мат: „…"», «реклама магазина». Не переписывай список правил.
 ok = false ставь только при явном нарушении правил; рецепты, инструкции, инфографика с текстом и цифрами — это нормально.
 Ответь коротко, только JSON без пояснений:
 {"ok": true или false, "people": true или false, "reasons": ["коротко по-русски, что нарушено"],

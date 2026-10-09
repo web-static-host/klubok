@@ -11,7 +11,7 @@ import { LoginForm } from '../components/LoginSheet'
 import { AvatarCropper } from '../components/AvatarCropper'
 import { useCheckedImages } from '../components/useCheckedImages'
 import { FolderCard, NewFolderButton } from './Folders'
-import { FoldersSkeleton, MasonrySkeleton, ProfileHeadSkeleton } from '../components/Skeleton'
+import { Bone, FoldersSkeleton, MasonrySkeleton, ProfileHeadSkeleton } from '../components/Skeleton'
 
 type Tab = 'posts' | 'folders' | 'tried'
 
@@ -28,7 +28,11 @@ export function Profile({ self }: { self?: boolean }) {
   if ((self && !s.authReady) || !s.loaded)
     return (
       <div className="px-2 pt-3 sm:px-3 md:px-4 md:pt-8 lg:px-6">
-        {!self && <div className="mb-2 h-10" />}
+        {!self && (
+          <div className="mb-2 px-1">
+            <Bone className="h-10 w-10 rounded-2xl" />
+          </div>
+        )}
         <ProfileHeadSkeleton />
         <div className="mt-5">
           <MasonrySkeleton rows={2} />

@@ -34,27 +34,36 @@ declare global {
 
 /** Связь иногда обрывается — повторяем сразу, а не ждём */
 const RETRIES = [300, 1000, 2500]
+/** сколько ждать ответа, прежде чем спросить заново: первая попытка — недолго, следующие — дольше (медленный интернет) */
+const TIMEOUTS = [5000, 10000, 15000, 20000]
 
 export async function restGet<T>(path: string): Promise<T> {
   const pre = window.__klubokPre?.[path]
   if (pre) {
     delete window.__klubokPre![path]
     try {
-      return (await pre) as T
+      // начатый заранее запрос тоже может зависнуть — ждём не дольше обычного
+      return (await Promise.race([pre, new Promise((_, no) => setTimeout(() => no(new Error('долго')), TIMEOUTS[0]))])) as T
     } catch {
-      /* начатый заранее запрос оборвался — спросим заново */
+      /* оборвался или завис — спросим заново */
     }
   }
   const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
   const url = `${API_URL}/rest/v1/${path}${path.includes('?') ? '&' : '?'}apikey=${key}`
   for (let i = 0; ; i++) {
     let r: Response | null = null
+    // зависший запрос (связь оборвалась, а браузер ещё ждёт) обрываем сами и спрашиваем заново
+    const stop = new AbortController()
+    const timer = setTimeout(() => stop.abort(), TIMEOUTS[Math.min(i + 1, TIMEOUTS.length - 1)])
     try {
-      r = await fetch(url)
+      r = await fetch(url, { signal: stop.signal })
+      if (r.ok) return (await r.json()) as T
     } catch {
-      /* обрыв связи */
+      /* обрыв связи (в том числе посреди ответа) или ждали слишком долго */
+      r = null
+    } finally {
+      clearTimeout(timer)
     }
-    if (r?.ok) return (await r.json()) as T
     if (r && r.status < 500) throw new Error(`запрос ${path}: ${r.status}`)
     if (i >= RETRIES.length) throw new Error(`запрос ${path}: нет ответа`)
     await new Promise((ok) => setTimeout(ok, RETRIES[i]))

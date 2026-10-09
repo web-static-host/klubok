@@ -7,7 +7,14 @@ import { useColumns } from './Masonry'
  * поэтому после загрузки ничего не прыгает — только серые места заполняются.
  */
 export function Bone({ className, style }: { className?: string; style?: CSSProperties }) {
-  return <span aria-hidden className={cx('block animate-pulse rounded-lg bg-elevated', className)} style={style} />
+  // скругление по умолчанию — только если своё не задано (иначе два скругления спорят и побеждает случайное)
+  return (
+    <span
+      aria-hidden
+      className={cx('block animate-pulse bg-elevated', !className?.includes('rounded-') && 'rounded-lg', className)}
+      style={style}
+    />
+  )
 }
 
 /** Пропорции «картинок» — разные, как в настоящей ленте; одинаковые при каждом показе */

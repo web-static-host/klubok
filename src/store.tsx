@@ -298,33 +298,44 @@ export function StoreProvider({
   }, [])
 
   // общие данные: авторы, посты, отзывы. Грузятся сразу, не дожидаясь проверки входа (они одинаковы для всех).
+  // Лента показывается, как только есть авторы, посты и отметки; ответы на отзывы (нужны только на странице идеи) — догружаются следом.
   const loadedRef = useRef(loaded)
   useEffect(() => {
     let live = true
-    Promise.all([
-      restGet<ProfileRow[]>(PUBLIC_QUERIES[0]),
-      restGet<PostRow[]>(PUBLIC_QUERIES[1]),
-      restGet<TryRow[]>(PUBLIC_QUERIES[2]),
-      restGet<ReplyRow[]>(PUBLIC_QUERIES[3]).catch(() => [] as ReplyRow[]),
-    ])
-      .then((rows) => {
+    const rows: PublicRows = cached ? [...cached] : [[], [], [], []]
+    let main = false
+    let rest = false
+    const remember = () => main && rest && saveCache(rows)
+    Promise.all([restGet<ProfileRow[]>(PUBLIC_QUERIES[0]), restGet<PostRow[]>(PUBLIC_QUERIES[1]), restGet<TryRow[]>(PUBLIC_QUERIES[2])])
+      .then(([u, p, t]) => {
         if (!live) return
-        const [u, p, t, r] = rows
         setUsers(u.map(toUser))
         setPosts(p.map(toPost))
         setTries(t.map(toTry))
-        setReplies(r.map(toReply))
-        saveCache(rows)
+        rows[0] = u
+        rows[1] = p
+        rows[2] = t
+        main = true
+        remember()
         setFailed(false)
         setLoaded(true)
         loadedRef.current = true
       })
       // показываем прошлые данные — ошибку обновления не показываем
       .catch(() => live && !loadedRef.current && setFailed(true))
+    restGet<ReplyRow[]>(PUBLIC_QUERIES[3])
+      .then((r) => {
+        if (!live) return
+        setReplies(r.map(toReply))
+        rows[3] = r
+        rest = true
+        remember()
+      })
+      .catch(() => {})
     return () => {
       live = false
     }
-  }, [attempt])
+  }, [attempt, cached])
 
   // вошёл человек, которого нет среди авторов (только что зарегистрировался) — подгружаем профили ещё раз
   const askedProfile = useRef<string | null>(null)

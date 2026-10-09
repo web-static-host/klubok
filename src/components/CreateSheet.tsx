@@ -38,11 +38,17 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
   const [busy, setBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const [dragOver, setDragOver] = useState(false)
-  // какую миниатюру тащат (перестановка картинок)
-  const [dragFrom, setDragFrom] = useState<number | null>(null)
+  // перетаскивание миниатюр: хватаешь и тянешь — остальные раздвигаются на ходу; работает и пальцем
+  const [dragKey, setDragKey] = useState<string | null>(null)
+  const drag = useRef<{ key: string; x: number; y: number; active: boolean } | null>(null)
+  const thumbs = useRef(new Map<string, HTMLElement>())
   // какая картинка показана крупно
-  const [selRaw, setSel] = useState(0)
-  const sel = Math.min(selRaw, Math.max(0, images.length - 1))
+  // выбранная картинка — по её ключу, а не номеру: при перестановке выбор остаётся на ней
+  const [selKey, setSelKey] = useState<string | null>(null)
+  const sel = Math.max(
+    0,
+    images.findIndex((i) => i.key === selKey),
+  )
   const cur = images[sel]
   // «До и после» включено и выбрана 1-я или 2-я — крупно показываем обе рядом
   const pairView = beforeAfter && images.length >= 2 && sel < 2
@@ -93,7 +99,7 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
     setTitleTouched(false)
     setTopics([])
     setTopicsTouched(false)
-    setSel(0)
+    setSelKey(null)
     setErr('')
   }
   const close = () => {
@@ -176,7 +182,6 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
         onDrop={(e) => {
           e.preventDefault()
           setDragOver(false)
-          // перетаскивают миниатюру внутри формы, а не файлы — это перестановка, не добавление
           if (e.dataTransfer.types.includes('Files')) addFiles([...e.dataTransfer.files])
         }}
         onSubmit={(e) => {
@@ -298,7 +303,6 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
                           aria-label="Переставить левее"
                           onClick={() => {
                             pics.move(sel, -1)
-                            setSel(sel - 1)
                           }}
                           className="press glass-strong inline-flex h-9 items-center gap-1 rounded-full pr-3 pl-2 text-xs font-bold"
                         >
@@ -313,7 +317,6 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
                           aria-label="Переставить правее"
                           onClick={() => {
                             pics.move(sel, 1)
-                            setSel(sel + 1)
                           }}
                           className="press glass-strong inline-flex h-9 items-center gap-1 rounded-full pr-2 pl-3 text-xs font-bold"
                         >
@@ -326,39 +329,70 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
               </div>
               <div className="flex flex-wrap gap-2">
                 {images.map((it, i) => (
-                  // миниатюру можно перетащить мышкой на другое место; на телефоне — кнопки «Раньше» / «Позже» на большой картинке
                   <div
                     key={it.key}
-                    draggable
-                    onDragStart={(e) => {
-                      setDragFrom(i)
-                      e.dataTransfer.effectAllowed = 'move'
+                    ref={(el) => {
+                      if (el) thumbs.current.set(it.key, el)
+                      else thumbs.current.delete(it.key)
                     }}
-                    onDragOver={(e) => dragFrom !== null && e.preventDefault()}
-                    onDrop={(e) => {
-                      if (dragFrom === null) return
-                      e.preventDefault()
-                      e.stopPropagation()
-                      if (dragFrom !== i) {
-                        pics.reorder(dragFrom, i)
-                        setSel(i)
-                      }
-                      setDragFrom(null)
-                    }}
-                    onDragEnd={() => setDragFrom(null)}
-                    className={cx('relative', dragFrom === i && 'opacity-40')}
+                    className={cx('relative transition-transform', dragKey === it.key && 'z-10 scale-110')}
                   >
-                    <button
-                      type="button"
-                      onClick={() => setSel(i)}
-                      aria-label={`Показать картинку ${i + 1}`}
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Картинка ${i + 1}: показать; перетащите, чтобы поменять порядок`}
                       aria-pressed={i === sel}
+                      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), setSelKey(it.key))}
+                      onPointerDown={(e) => {
+                        if (e.button !== 0) return
+                        drag.current = { key: it.key, x: e.clientX, y: e.clientY, active: false }
+                        e.currentTarget.setPointerCapture(e.pointerId)
+                      }}
+                      onPointerMove={(e) => {
+                        const d = drag.current
+                        if (!d) return
+                        if (!d.active) {
+                          if (Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6) return
+                          d.active = true
+                          setDragKey(d.key)
+                        }
+                        // ставим на место той миниатюры, к центру которой ближе всего палец/мышь
+                        let to = -1
+                        let best = Infinity
+                        images.forEach((im, k) => {
+                          const r = thumbs.current.get(im.key)?.getBoundingClientRect()
+                          if (!r) return
+                          const dist = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2))
+                          if (dist < best) {
+                            best = dist
+                            to = k
+                          }
+                        })
+                        const from = images.findIndex((im) => im.key === d.key)
+                        if (to >= 0 && to !== from) pics.reorder(from, to)
+                      }}
+                      onPointerUp={() => {
+                        const d = drag.current
+                        drag.current = null
+                        setDragKey(null)
+                        if (d) setSelKey(d.key) // просто нажали или дотащили — показываем её крупно
+                      }}
+                      onPointerCancel={() => {
+                        drag.current = null
+                        setDragKey(null)
+                      }}
                       className={cx(
-                        'press relative block h-20 w-16 cursor-grab overflow-hidden rounded-xl bg-elevated ring-2 ring-offset-2 ring-offset-bg',
+                        'press relative block h-20 w-16 cursor-grab touch-none overflow-hidden rounded-xl bg-elevated ring-2 ring-offset-2 ring-offset-bg select-none',
                         i === sel ? 'ring-accent' : 'ring-transparent',
+                        dragKey === it.key && 'cursor-grabbing shadow-lg',
                       )}
                     >
-                      <img src={it.preview.src} alt="" className={cx('h-full w-full object-cover', it.status === 'bad' && 'opacity-40')} />
+                      <img
+                        src={it.preview.src}
+                        alt=""
+                        draggable={false}
+                        className={cx('pointer-events-none h-full w-full object-cover', it.status === 'bad' && 'opacity-40')}
+                      />
                       <span className="glass-strong absolute top-1 left-1 rounded-full px-1.5 text-[10px] leading-4 font-bold">
                         {label(i)}
                       </span>
@@ -382,18 +416,17 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
                           </span>
                         )}
                       </span>
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={`Убрать картинку ${i + 1}`}
-                      onClick={() => {
-                        pics.remove(it.key)
-                        if (sel > i) setSel(sel - 1)
-                      }}
-                      className="press glass-strong absolute -top-1.5 -right-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full shadow"
-                    >
-                      <X size={13} strokeWidth={2.6} />
-                    </button>
+                    </div>
+                    {dragKey !== it.key && (
+                      <button
+                        type="button"
+                        aria-label={`Убрать картинку ${i + 1}`}
+                        onClick={() => pics.remove(it.key)}
+                        className="press glass-strong absolute -top-1.5 -right-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full shadow"
+                      >
+                        <X size={13} strokeWidth={2.6} />
+                      </button>
+                    )}
                   </div>
                 ))}
                 {images.length < MAX && (

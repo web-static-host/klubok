@@ -283,8 +283,8 @@ interface Verdict {
   meta: Meta
   text: string
   description: string
-  /** только в подробном разборе: что нашёл отдельный вопрос «есть ли мат» (пусто — ничего) */
-  swear?: string[]
+  /** только в подробном разборе: фильтр ГигаЧата отказался переписывать текст с картинки */
+  textBlocked?: boolean
 }
 
 /** Ответ модели → объект; если модель отказалась отвечать (фильтр GigaChat) — это нарушение */
@@ -427,39 +427,37 @@ async function isAdmin(req: Request): Promise<boolean> {
 }
 
 /**
- * Отдельный короткий вопрос «есть ли на картинке мат» (по уже загруженной в ГигаЧат картинке).
- * В подробном разборе ИИ переписывает только крупный текст и пропускает мелкие надписи — узкий вопрос ловит надёжнее.
- * Ответ короткий (~1,5–2 с). ИИ недоступен — пусто: разбор не срываем.
+ * Весь текст с картинки дословно — отдельной просьбой (по уже загруженной в ГигаЧат картинке); мат и ссылки в нём ищет наш список (imageTextCheck).
+ * Опыт 9 октября: на вопрос «есть ли мат?» ГигаЧат отвечает «нет», даже когда видит слово, а переписать — переписывает;
+ * а внутри подробного разбора переписывает только крупный текст. Длится ~0,05 с на слово-«токен» (обычно 2–5 с).
+ * blocked — фильтр ГигаЧата отказался отвечать (обычно — из-за того, что на картинке). ИИ недоступен — пусто: разбор не срываем.
  */
-async function findSwear(id: string, tm: Timing, model = GC_MODEL): Promise<string[]> {
+async function readText(id: string, tm: Timing = {}, model = GC_MODEL): Promise<{ text: string; blocked: boolean }> {
   const st: Timing = {}
   try {
     const v = await gcAsk(
-      `Ты ищешь на картинке мат. Внимательно осмотри ВСЮ картинку, включая мелкие надписи, текст от руки, слова поверх других элементов, по краям и в углах.
-Ищи мат и грубую брань, в том числе замаскированные (буквы заменены символами или латиницей, разбиты точками или пробелами), и оскорбления.
-Обычный текст рецептов, интерфейсов, подписей — не нарушение. Не уверен — ok = true.
-Само слово не пиши. Ответь только JSON без пояснений:
-{"ok": true, если мата нет, или false, "reasons": ["мат: где на картинке, коротко — например «мат: надпись красным слева вверху»"]}`,
-      'Есть ли на этой картинке мат?',
+      `Перепиши дословно весь текст с картинки, каждую надпись с новой строки. Ничего не пропускай: мелкие надписи, текст от руки, надписи другим цветом и поверх других элементов. Ничего не исправляй и не смягчай, даже грубые слова.
+Ответь только JSON без пояснений: {"text": "весь текст, или пусто"}`,
+      'Перепиши текст с картинки.',
       [id],
       true,
       st,
       model,
     )
-    return v.ok ? [] : v.reasons.length ? v.reasons : ['Мат на картинке']
+    return { text: v.text, blocked: !v.ok }
   } catch (e) {
-    console.error('проверка на мат не удалась:', e instanceof Error ? e.message : e)
-    return []
+    console.error('текст с картинки не прочитан:', e instanceof Error ? e.message : e)
+    return { text: '', blocked: false }
   } finally {
-    tm.swear_ai = st.ai ?? 0
-    tm.swear_out = st.tokens_out ?? 0
+    tm.text_ai = st.ai ?? 0
+    tm.text_out = st.tokens_out ?? 0
   }
 }
 
 /**
  * Картинка → ГигаЧат. Время ответа почти целиком зависит от того, сколько он пишет (~0,05 с на токен), поэтому два вида:
  * quick — сразу при загрузке: можно ли по правилам, есть ли люди, название и категории (коротко, ~3–4 с);
- * full — после публикации, в фоне: весь текст с картинки и раскладка идеи для поиска и рекомендаций (10–25 с).
+ * full — после публикации, в фоне: раскладка идеи для поиска и рекомендаций (теги) и отдельной просьбой — весь текст с картинки (readText).
  */
 async function aiCheckImage(
   src: string,
@@ -496,7 +494,7 @@ ok = false ставь только при явном нарушении прав
 Разложи, что за идея на картинке; одинаково для любых картинок. Слова — по-русски, строчными, в начальной форме.
 В main, techniques, tools НЕ пиши то, что есть почти в любой такой идее: соль, перец, вода, сахар, масло, мука, специи, зелень, посуда, руки. Только то, что отличает именно эту идею.
 Ответь только JSON без пояснений:
-{"text": "весь текст с картинки дословно, или пусто", "description": "одно предложение: что на картинке",
+{"description": "одно предложение: что на картинке",
  "idea": "идея одной фразой, 2–6 слов: «креветки в сливочном соусе», «органайзер для проводов из прищепок», «спальня в скандинавском стиле»",
  "kind": "одно из: ${KINDS.join(', ')}",
  "main": ["2–6 главных объектов, без которых идеи нет"],
@@ -511,7 +509,10 @@ ok = false ставь только при явном нарушении прав
           [id],
           true,
           tm,
-        ).then(async (v) => ({ ...v, swear: await findSwear(id, tm) }))
+        ).then(async (v) => {
+          const r = await readText(id, tm)
+          return { ...v, text: r.text, textBlocked: r.blocked }
+        })
   } finally {
     gcDelete(id)
   }
@@ -666,7 +667,7 @@ async function describePost(postId: string, uid: string, images: ImgIn[], quick:
       const v = await aiCheckImage(img.src, true, tm, undefined, 'full')
       const meta: Meta = { ...v.meta, title: saved?.meta?.title ?? '', topics: topicIds(saved?.meta?.topics) }
       const text = [v.description, v.text].filter(Boolean).join('. ')
-      const found = [...imageTextCheck(v.text), ...(v.swear ?? [])]
+      const found = [...imageTextCheck(v.text), ...(v.textBlocked ? ['Текст на картинке нарушает правила'] : [])]
       // плохая картинка отмечается и в проверках — с ней больше не опубликуют
       await admin
         .from('image_checks')
@@ -837,17 +838,8 @@ export async function handle(req: Request): Promise<Response> {
     const model = GC_MODELS.includes(String(body.model)) ? String(body.model) : GC_MODEL
     const id = await gcUpload({ bytes: bytes.buffer, type: 'image/jpeg', auth: await gcToken() })
     try {
-      if (body.ask === 'swear') return json({ ok: true, swear: await findSwear(id, {}, model) })
-      const v = await gcAsk(
-        `Перепиши дословно весь текст с картинки, каждую надпись с новой строки. Ничего не пропускай: мелкие надписи, текст от руки, надписи другим цветом и поверх других элементов. Ничего не исправляй и не смягчай, даже грубые слова.
-Ответь только JSON без пояснений: {"text": "весь текст"}`,
-        'Перепиши текст с картинки.',
-        [id],
-        true,
-        undefined,
-        model,
-      )
-      return json({ ok: true, text: v.text, mat: imageTextCheck(v.text).length > 0, blocked: !v.ok })
+      const v = await readText(id, {}, model)
+      return json({ ok: true, text: v.text, mat: imageTextCheck(v.text).length > 0, blocked: v.blocked })
     } finally {
       gcDelete(id)
     }

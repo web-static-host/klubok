@@ -27,9 +27,7 @@ if len(sys.argv) > 1:
 
 for name, img in [('с матом', orig), ('с «привет»', probe)]:
     for model in ['GigaChat-2-Max', 'GigaChat-2-Pro']:
-        s = ask(img, 'swear', model)
         o = ask(img, 'ocr', model)
         t = (o.get('text') or '').lower()
-        print(f'{name:12} {model:15} вопрос «есть мат»: {"да" if s.get("swear") else "нет"} | '
-              f'переписал текст: {len(t)} букв, мат по нашему списку: {"ЕСТЬ" if o.get("mat") else "нет"}, «привет» {"ЕСТЬ" if "привет" in t else "нет"}, '
+        print(f'{name:12} {model:15} переписал текст: {len(t)} букв, мат по нашему списку: {"ЕСТЬ" if o.get("mat") else "нет"}, «привет» {"ЕСТЬ" if "привет" in t else "нет"}, '
               f'«быстрый доступ» {"есть" if "быстрый доступ" in t else "нет"}, отказ фильтра: {o.get("blocked")}')

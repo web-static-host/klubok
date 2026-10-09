@@ -9,6 +9,6 @@ const r = await fetch(`https://${REF}.supabase.co/functions/v1/publish`, {
 const v = await r.json()
 if (!v.ok) throw new Error(`ошибка ${r.status}`)
 console.log(`была скрыта: ${v.was_hidden}, теперь скрыта: ${v.hidden}, всего: ${v.total} мс`)
-const cols = ['ai', 'tokens_out', 'swear_ai', 'swear_out']
+const cols = ['ai', 'tokens_out', 'text_ai', 'text_out']
 console.log('картинка\t' + cols.join('\t'))
 v.images.forEach((t, i) => console.log(`${i + 1}\t` + cols.map((c) => t[c] ?? '').join('\t')))

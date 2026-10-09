@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { AiMeta, Folder, Img, Post, PostType, Reply, Topic, Try, User } from './data/types'
 import { PUBLIC_QUERIES, canonical, restGet, supabase } from './supabase'
-import { shrink } from './lib'
+import { localCopy, shrink } from './lib'
 
 /**
  * Состояние сайта. Данные — в базе Supabase, тема оформления — в браузере.
@@ -533,7 +533,9 @@ export function StoreProvider({
     // имя файла всегда новое — браузер может хранить картинку у себя год и не переспрашивать
     const put = async (path: string, blob: Blob) => {
       check(await supabase.storage.from('images').upload(path, blob, { contentType: 'image/jpeg', cacheControl: '31536000' }))
-      return canonical(supabase.storage.from('images').getPublicUrl(path).data.publicUrl)
+      const url = canonical(supabase.storage.from('images').getPublicUrl(path).data.publicUrl)
+      localCopy.set(url, URL.createObjectURL(blob))
+      return url
     }
     // оригинал и уменьшенная копия для ленты — одновременно
     const [src, thumb] = await Promise.all([

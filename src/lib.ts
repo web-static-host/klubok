@@ -1,9 +1,15 @@
 import type { Img } from './data/types'
 import { viaApi } from './supabase'
 
+/**
+ * Свои только что загруженные картинки: адрес в хранилище → копия в памяти браузера.
+ * Новая идея показывается сразу, не дожидаясь, пока файл первый раз скачается с сервера (бывает до ~10 с). Живёт до перезагрузки страницы.
+ */
+export const localCopy = new Map<string, string>()
+
 /** Адрес картинки: файл в хранилище Supabase или только что выбранное фото (data:URL) */
 export function imgSrc(img: Img): string {
-  return viaApi(img.src ?? '')
+  return localCopy.get(img.src ?? '') ?? viaApi(img.src ?? '')
 }
 
 export function plural(n: number, one: string, few: string, many: string) {

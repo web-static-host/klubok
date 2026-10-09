@@ -2,7 +2,7 @@ import { useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { type LucideIcon } from 'lucide-react'
 import type { Img, Topic, User } from '../data/types'
 import { topicLabel } from '../data/types'
-import { THUMB_W, cx, imgSrc } from '../lib'
+import { THUMB_W, cx, imgSrc, localCopy } from '../lib'
 import { viaApi } from '../supabase'
 
 export function Picture({
@@ -28,7 +28,7 @@ export function Picture({
   // в ленте и миниатюрах (до 600 px) — уменьшенная копия, если есть; крупно — оригинал. Копия не загрузилась — сразу оригинал
   const [noThumb, setNoThumb] = useState(false)
   const thumb = !noThumb && w && w <= THUMB_W && img.thumb
-  const src = thumb ? viaApi(img.thumb!) : imgSrc(img)
+  const src = thumb ? (localCopy.get(img.thumb!) ?? viaApi(img.thumb!)) : imgSrc(img)
   return (
     <div className={cx('relative overflow-hidden bg-elevated', className)} style={fill ? undefined : { aspectRatio: `1 / ${img.ratio}` }}>
       <img

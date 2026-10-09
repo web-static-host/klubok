@@ -44,11 +44,17 @@ export function PinCard({ post, folderId }: { post: Post; folderId?: string }) {
       {/* только что опубликованная — пару секунд в бирюзовой рамке */}
       <div
         className={cx(
-          'relative rounded-2xl ring-offset-2 ring-offset-bg transition-shadow duration-700',
-          fresh === post.id ? 'ring-2 ring-accent' : 'ring-0',
+          'relative rounded-2xl transition-shadow duration-700',
+          // рамка с отступом — только пока нужна: иначе от отступа по углам остаётся тонкая дуга
+          fresh === post.id && 'ring-2 ring-accent ring-offset-2 ring-offset-bg',
         )}
       >
-        <Link to={`/p/${post.id}`} onClick={open} className="block rounded-2xl" aria-label={post.title}>
+        <Link
+          to={`/p/${post.id}`}
+          onClick={open}
+          className={cx('block rounded-2xl', post.hidden && 'opacity-50 grayscale')}
+          aria-label={post.title}
+        >
           {post.type === 'beforeafter' && post.images[1] ? (
             <div className="grid grid-cols-2 gap-0.5 overflow-hidden rounded-2xl" style={{ aspectRatio: `1 / ${post.images[0].ratio}` }}>
               {post.images.slice(0, 2).map((im, i) => (
@@ -77,13 +83,14 @@ export function PinCard({ post, folderId }: { post: Post; folderId?: string }) {
           )}
           <span className="pointer-events-none absolute inset-0 rounded-2xl bg-black/0 transition-colors duration-200 group-hover:bg-black/15" />
         </Link>
+        {/* скрытая (видит только автор): картинка серая, причина — по центру */}
         {post.hidden && (
-          <span
-            className="pointer-events-none absolute top-2 left-2 rounded-full bg-rose-500 px-2.5 py-1 text-xs font-bold text-white"
-            title={post.hidden}
-          >
-            Скрыто
-          </span>
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-3">
+            <div className="glass-strong max-w-full rounded-2xl px-3 py-2 text-center">
+              <p className="text-xs font-bold text-rose-500">Скрыто</p>
+              <p className="mt-0.5 line-clamp-4 text-xs leading-4 font-semibold">{post.hidden}</p>
+            </div>
+          </div>
         )}
         {/* категории — только при наведении (на картинке плашки нет) */}
         <div className="pointer-events-none absolute top-2 left-2 flex max-w-[calc(100%-56px)] flex-wrap gap-1 opacity-0 transition-opacity duration-200 group-focus-within:opacity-100 group-hover:opacity-100 max-md:hidden">

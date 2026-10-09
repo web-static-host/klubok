@@ -85,8 +85,18 @@ export function PinCard({ post, folderId }: { post: Post; folderId?: string }) {
         </Link>
         {/* скрытая (видит только автор): картинка серая, причина — по центру */}
         {post.hidden && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-3">
-            <div className="glass-strong max-w-full rounded-2xl px-3 py-2 text-center">
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden rounded-2xl p-3">
+            {/* красный крест от угла до угла */}
+            <svg className="absolute inset-0 h-full w-full text-rose-500" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
+              <path
+                d="M0 0 100 100M100 0 0 100"
+                stroke="currentColor"
+                strokeWidth={3}
+                vectorEffect="non-scaling-stroke"
+                strokeLinecap="round"
+              />
+            </svg>
+            <div className="glass-strong relative max-w-full rounded-2xl px-3 py-2 text-center">
               <p className="text-xs font-bold text-rose-500">Скрыто</p>
               <p className="mt-0.5 line-clamp-4 text-xs leading-4 font-semibold">{post.hidden}</p>
             </div>

@@ -28,9 +28,9 @@ export function Profile({ self }: { self?: boolean }) {
   // ещё не знаем, вошёл ли человек, или нет данных — заглушка в разметке профиля (а не форма входа и не «никого»)
   if ((self && !s.authReady) || !s.loaded)
     return (
-      <div className="px-2 pt-3 sm:px-3 md:px-4 md:pt-8 lg:px-6">
+      <div className="px-2 pt-2 sm:px-3 md:px-4 lg:px-6">
         <ProfileHeadSkeleton self={self} back={!self} />
-        <div className="mt-5">
+        <div className="mt-2">
           <MasonrySkeleton rows={2} />
         </div>
       </div>
@@ -59,13 +59,13 @@ export function Profile({ self }: { self?: boolean }) {
   ]
 
   return (
-    <div className="px-2 pt-3 sm:px-3 md:px-4 md:pt-8 lg:px-6">
+    <div className="px-2 pt-2 sm:px-3 md:px-4 lg:px-6">
       {/* шапка — в ширину: карточка автора (с кнопкой «Изменить профиль» / «Подписаться»), цифры; у себя ниже — настройки. На телефоне — столбиком */}
       <div className="relative">
         {/* «Назад» — не отдельной строкой: на широком экране слева от шапки, на узком — в карточке автора */}
         {!self && <IconButton icon={ArrowLeft} label="Назад" className="absolute top-0 left-0 max-lg:hidden" onClick={back} />}
         <section className="fade-up flex flex-col gap-2 md:flex-row md:flex-wrap md:justify-center">
-          <div className="card flex min-w-0 items-center gap-3 p-3 md:max-w-[560px]">
+          <div className="card flex min-w-0 items-center gap-3 p-3 md:max-w-[560px] md:py-2">
             {!self && <IconButton icon={ArrowLeft} label="Назад" className="lg:hidden" onClick={back} />}
             <Avatar user={u} size={56} />
             <div className="min-w-0 flex-1">
@@ -76,11 +76,11 @@ export function Profile({ self }: { self?: boolean }) {
             {mine ? (
               <>
                 {/* компьютер: «Изменить профиль», под ней «Выйти» */}
-                <div className="ml-1 flex shrink-0 flex-col gap-1.5 max-md:hidden">
-                  <Button kind="neutral" size="sm" icon={Pencil} onClick={() => setEditing('profile')}>
+                <div className="ml-1 flex shrink-0 flex-col gap-1 max-md:hidden">
+                  <Button kind="neutral" size="sm" icon={Pencil} className="h-8!" onClick={() => setEditing('profile')}>
                     Изменить профиль
                   </Button>
-                  <Button kind="neutral" size="sm" icon={LogOut} onClick={() => s.signOut()}>
+                  <Button kind="neutral" size="sm" icon={LogOut} className="h-8!" onClick={() => s.signOut()}>
                     Выйти
                   </Button>
                 </div>
@@ -125,11 +125,11 @@ export function Profile({ self }: { self?: boolean }) {
           </section>
         )}
       </div>
-      <div className="mx-auto mt-4 w-full max-w-sm">
+      <div className="mx-auto mt-2 w-full max-w-sm">
         <Segmented value={tab} onChange={setTab} options={tabs} />
       </div>
 
-      <div className="mt-5">
+      <div className="mt-2">
         {tab === 'posts' &&
           (posts.length ? (
             <Masonry posts={posts} />

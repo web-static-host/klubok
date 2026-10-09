@@ -102,17 +102,17 @@ export function PostPage() {
   return (
     <>
       <div className="mx-auto max-w-6xl px-3 pt-3 md:px-6 md:pt-6">
-        <div className="mb-3 flex items-center gap-2">
-          <IconButton icon={ArrowLeft} label="Назад" onClick={() => (window.history.length > 1 ? nav(-1) : nav('/'))} />
-          <div className="flex-1" />
-          {isMine && <IconButton icon={Trash2} label="Удалить идею" onClick={() => setAskDelete(true)} />}
-          <IconButton icon={Link2} label="Поделиться" onClick={share} />
-        </div>
-
         <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:gap-8">
           {/* картинки — в них вся идея */}
-          <div className="md:sticky md:top-20 md:self-start">
+          {/* «Назад» — поверх картинки слева сверху, отдельной полосы над страницей нет */}
+          <div className="relative md:sticky md:top-20 md:self-start">
             <Gallery key={p.id} post={p} />
+            <IconButton
+              icon={ArrowLeft}
+              label="Назад"
+              className="absolute top-2 left-2 z-10 shadow-sm"
+              onClick={() => (window.history.length > 1 ? nav(-1) : nav('/'))}
+            />
           </div>
 
           <div className="min-w-0">
@@ -122,34 +122,39 @@ export function PostPage() {
                 <p className="mt-0.5">{p.hidden}. Удалите её и опубликуйте снова.</p>
               </div>
             )}
-            <div className="mb-3 flex flex-wrap gap-2">
-              {p.topics.map((t) => (
-                <Link
-                  key={t}
-                  to={`/search?q=${encodeURIComponent(topicLabel(t))}`}
-                  className="press rounded-full border border-line bg-surface px-2.5 py-1 text-xs font-semibold hover:bg-active"
+            {/* категории слева, «Удалить» и «Поделиться» — справа в том же ряду */}
+            <div className="mb-3 flex items-start gap-2">
+              <div className="flex flex-1 flex-wrap gap-2">
+                {p.topics.map((t) => (
+                  <Link
+                    key={t}
+                    to={`/search?q=${encodeURIComponent(topicLabel(t))}`}
+                    className="press rounded-full border border-line bg-surface px-2.5 py-1 text-xs font-semibold hover:bg-active"
+                  >
+                    {topicLabel(t)}
+                  </Link>
+                ))}
+                {/* ТЕСТ: кнопка «Теги ИИ» — убрать после тестов */}
+                <button
+                  type="button"
+                  onClick={() => setShowAi((v) => !v)}
+                  aria-expanded={showAi}
+                  className="press rounded-full border border-dashed border-line-strong px-2.5 py-1 text-xs font-semibold hover:bg-active"
                 >
-                  {topicLabel(t)}
-                </Link>
-              ))}
-              {/* ТЕСТ: кнопка «Теги ИИ» — убрать после тестов */}
-              <button
-                type="button"
-                onClick={() => setShowAi((v) => !v)}
-                aria-expanded={showAi}
-                className="press rounded-full border border-dashed border-line-strong px-2.5 py-1 text-xs font-semibold hover:bg-active"
-              >
-                Теги ИИ (тест)
-              </button>
-              {/* ТЕСТ: кнопка «Статистика» — в финале это увидит только автор, в своей статистике */}
-              <button
-                type="button"
-                onClick={() => setShowStats((v) => !v)}
-                aria-expanded={showStats}
-                className="press rounded-full border border-dashed border-line-strong px-2.5 py-1 text-xs font-semibold hover:bg-active"
-              >
-                Статистика (тест)
-              </button>
+                  Теги ИИ (тест)
+                </button>
+                {/* ТЕСТ: кнопка «Статистика» — в финале это увидит только автор, в своей статистике */}
+                <button
+                  type="button"
+                  onClick={() => setShowStats((v) => !v)}
+                  aria-expanded={showStats}
+                  className="press rounded-full border border-dashed border-line-strong px-2.5 py-1 text-xs font-semibold hover:bg-active"
+                >
+                  Статистика (тест)
+                </button>
+              </div>
+              {isMine && <IconButton icon={Trash2} label="Удалить идею" onClick={() => setAskDelete(true)} />}
+              <IconButton icon={Link2} label="Поделиться" onClick={share} />
             </div>
             {showStats && <StatsView p={p} ok={ok} fail={tries.length - ok} />}
             {showAi && (

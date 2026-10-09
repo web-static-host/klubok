@@ -122,7 +122,7 @@ export function ProfileHeadSkeleton({ self, back }: { self?: boolean; back?: boo
     <div className="relative" role="status" aria-label="Загрузка">
       {back && <Bone className="absolute top-0 left-0 h-10 w-10 rounded-2xl max-lg:hidden" />}
       <section className="flex flex-col gap-2 md:flex-row md:flex-wrap md:justify-center">
-        <div className="card flex min-w-0 items-center gap-3 p-3 md:max-w-[560px]">
+        <div className="card flex min-w-0 items-center gap-3 p-3 md:max-w-[560px] md:py-2">
           {back && <Bone className="h-10 w-10 shrink-0 rounded-2xl lg:hidden" />}
           <Bone className="h-14 w-14 shrink-0 rounded-full" />
           <div className="min-w-0 flex-1">
@@ -134,7 +134,7 @@ export function ProfileHeadSkeleton({ self, back }: { self?: boolean; back?: boo
             </p>
           </div>
           {/* у себя: на компьютере «Изменить профиль» и «Выйти» столбиком, на телефоне — шестерёнка; у чужого — «Подписаться» */}
-          <Bone className={cx('ml-1 shrink-0 rounded-2xl', self ? 'h-10 w-10 md:h-[78px] md:w-[188px]' : 'h-9 w-[120px] max-md:hidden')} />
+          <Bone className={cx('ml-1 shrink-0 rounded-2xl', self ? 'h-10 w-10 md:h-[68px] md:w-[188px]' : 'h-9 w-[120px] max-md:hidden')} />
         </div>
         {!self && <Bone className="min-h-12 rounded-2xl md:hidden" />}
         <div className="grid grid-cols-3 gap-2 md:flex">
@@ -156,7 +156,7 @@ export function ProfileHeadSkeleton({ self, back }: { self?: boolean; back?: boo
           <Bone className="h-[52px] w-[178px] rounded-2xl" />
         </div>
       )}
-      <div className="mx-auto mt-4 w-full max-w-sm">
+      <div className="mx-auto mt-2 w-full max-w-sm">
         <div className="card grid grid-cols-2 gap-1 p-1">
           {[0, 1].map((i) => (
             <div key={i} className="rounded-xl border border-transparent px-2 py-2.5 text-sm font-semibold">
@@ -174,18 +174,16 @@ export function PostSkeleton() {
   return (
     // не короче экрана: полоса прокрутки есть сразу и не сдвигает страницу, когда появится настоящая (длинная) страница
     <div className="mx-auto min-h-dvh max-w-6xl px-3 pt-3 md:px-6 md:pt-6" role="status" aria-label="Загрузка">
-      <div className="mb-3 flex items-center gap-2">
-        <Bone className="h-10 w-10 rounded-2xl" />
-        <div className="flex-1" />
-        <Bone className="h-10 w-10 rounded-2xl" />
-      </div>
       <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:gap-8">
         <Bone className="aspect-[4/5] rounded-2xl" />
         <div className="min-w-0">
-          <div className="mb-3 flex flex-wrap gap-2">
-            {[88, 76, 92].map((w) => (
-              <Bone key={w} className="h-[26px] rounded-full" style={{ width: w }} />
-            ))}
+          <div className="mb-3 flex items-start gap-2">
+            <div className="flex flex-1 flex-wrap gap-2">
+              {[88, 76, 92].map((w) => (
+                <Bone key={w} className="h-[26px] rounded-full" style={{ width: w }} />
+              ))}
+            </div>
+            <Bone className="h-10 w-10 rounded-2xl" />
           </div>
           {/* на телефоне название обычно в две строки */}
           <h1 className="text-2xl leading-8 font-bold md:text-[28px] md:leading-9">

@@ -39,6 +39,8 @@ export function PostPage() {
   }, [params, id])
 
   if (!p) return loaded ? <Empty icon={SearchX}>Такой идеи нет или её удалили.</Empty> : <PostSkeleton />
+  // скрытую видит только автор
+  if (p.hidden && p.authorId !== me.id) return <Empty icon={SearchX}>Такой идеи нет или её удалили.</Empty>
 
   const a = user(p.authorId)
   const tries = triesOf(p.id)
@@ -49,7 +51,7 @@ export function PostPage() {
   const isMine = p.authorId === me.id
   // похожие: есть общая категория, сначала — у кого общих больше
   const more = posts
-    .filter((x) => x.id !== p.id && x.topics.some((t) => p.topics.includes(t)))
+    .filter((x) => x.id !== p.id && !x.hidden && x.topics.some((t) => p.topics.includes(t)))
     .map((x) => ({ x, n: x.topics.filter((t) => p.topics.includes(t)).length }))
     .sort((a, b) => b.n - a.n)
     .map(({ x }) => x)
@@ -114,6 +116,12 @@ export function PostPage() {
           </div>
 
           <div className="min-w-0">
+            {p.hidden && (
+              <div className="mb-3 rounded-2xl bg-rose-500/10 px-4 py-3 text-sm text-rose-500" role="alert">
+                <p className="font-bold">Идея скрыта — её видите только вы</p>
+                <p className="mt-0.5">{p.hidden}. Удалите её и опубликуйте снова без этого.</p>
+              </div>
+            )}
             <div className="mb-3 flex flex-wrap gap-2">
               <span
                 className="inline-flex items-center gap-1 rounded-full border chip-on px-2.5 py-1 text-xs font-semibold"

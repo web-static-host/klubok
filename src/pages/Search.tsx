@@ -16,8 +16,10 @@ export function Search() {
   const { posts, users, user, me, loaded } = useStore()
 
   const found = q
-    ? posts.filter((p) =>
-        [p.title, ...p.topics.map(topicLabel), ...p.tags, p.ai?.text ?? '', user(p.authorId).name].join(' ').toLowerCase().includes(q),
+    ? posts.filter(
+        (p) =>
+          !p.hidden &&
+          [p.title, ...p.topics.map(topicLabel), ...p.tags, p.ai?.text ?? '', user(p.authorId).name].join(' ').toLowerCase().includes(q),
       )
     : []
   const people = q ? users.filter((u) => u.id !== me.id && (u.name + ' ' + u.handle).toLowerCase().includes(q)) : []

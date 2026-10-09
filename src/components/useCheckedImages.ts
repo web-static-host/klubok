@@ -61,6 +61,14 @@ export function useCheckedImages(purpose: 'post' | 'avatar') {
         ;[b[i], b[i + d]] = [b[i + d], b[i]]
         return b
       }),
+    /** перетащили картинку с места from на место to */
+    reorder: (from: number, to: number) =>
+      setItems((a) => {
+        const b = [...a]
+        const [x] = b.splice(from, 1)
+        b.splice(to, 0, x)
+        return b
+      }),
     reset: () => setItems([]),
     /** сколько ещё проверяется */
     pending: items.filter((i) => i.status === 'checking').length,

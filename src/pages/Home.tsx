@@ -18,6 +18,7 @@ export function Home() {
     return [...TOPICS.map((x) => x.id).filter((t) => used.has(t)), ...own]
   }, [posts])
   const list = (topic === 'all' ? posts : posts.filter((p) => p.topics.includes(topic)))
+    .filter((p) => !p.hidden)
     .map((p, i) => ({ p, score: p.saves / 5 + (posts.length - i) / 6 }))
     .sort((a, b) => b.score - a.score)
     .map((x) => x.p)

@@ -78,7 +78,9 @@ function FeedCard({ post }: { post: Post }) {
 
 export function Following() {
   const { posts, follows, users, toggleFollow, me, loaded, mineReady } = useStore()
-  const list = posts.filter((p) => follows.includes(p.authorId) || p.authorId === me.id).sort((a, b) => b.createdAt - a.createdAt)
+  const list = posts
+    .filter((p) => !p.hidden && (follows.includes(p.authorId) || p.authorId === me.id))
+    .sort((a, b) => b.createdAt - a.createdAt)
   const suggest = users.filter((u) => u.id !== me.id && !follows.includes(u.id)).slice(0, 4)
 
   return (

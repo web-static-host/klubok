@@ -71,6 +71,14 @@ export function PinCard({ post, folderId }: { post: Post; folderId?: string }) {
           )}
           <span className="pointer-events-none absolute inset-0 rounded-2xl bg-black/0 transition-colors duration-200 group-hover:bg-black/15" />
         </Link>
+        {post.hidden && (
+          <span
+            className="pointer-events-none absolute top-2 left-2 rounded-full bg-rose-500 px-2.5 py-1 text-xs font-bold text-white"
+            title={post.hidden}
+          >
+            Скрыто
+          </span>
+        )}
         {/* категории — только при наведении (на картинке плашки нет) */}
         <div className="pointer-events-none absolute top-2 left-2 flex max-w-[calc(100%-56px)] flex-wrap gap-1 opacity-0 transition-opacity duration-200 group-focus-within:opacity-100 group-hover:opacity-100 max-md:hidden">
           {post.topics.map((t) => (

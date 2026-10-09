@@ -47,6 +47,9 @@ create table posts (
   ai_meta jsonb,
   -- проверено ли ИИ (если ИИ был недоступен — только быстрые проверки)
   checked_by_ai boolean not null default false,
+  -- скрыта: подробная проверка после публикации нашла в тексте на картинке ссылку или мат; видит только автор (с причиной)
+  hidden boolean not null default false,
+  hidden_reason text,
   -- сколько человек сохранили в свои папки (считает база)
   saves_count int not null default 0,
   -- статистика для автора: показы карточки в ленте и клики по ней (функция track_posts)
@@ -234,7 +237,7 @@ alter table try_replies enable row level security;
 
 create policy "профили видны всем" on profiles for select using (true);
 
-create policy "посты видны всем" on posts for select using (true);
+create policy "посты видны всем, скрытые — только автору" on posts for select using (not hidden or author_id = auth.uid());
 create policy "свой пост: удалить" on posts for delete to authenticated using (author_id = auth.uid());
 
 create policy "попытки видны всем" on tries for select using (true);

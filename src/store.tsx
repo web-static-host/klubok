@@ -117,6 +117,8 @@ interface PostRow {
   /** категории (до обновления 007 — только topic) */
   topics?: string[]
   saves_count?: number
+  hidden?: boolean
+  hidden_reason?: string | null
   views_count?: number
   clicks_count?: number
   created_at: string
@@ -149,6 +151,7 @@ const toPost = (r: PostRow): Post => ({
   createdAt: Date.parse(r.created_at),
   images: r.images,
   saves: r.saves_count ?? 0,
+  hidden: r.hidden ? r.hidden_reason || 'Нарушает правила' : undefined,
   stats: { views: r.views_count ?? 0, clicks: r.clicks_count ?? 0 },
   tags: [...r.tags, ...(r.ai_tags ?? [])],
   ai: { tags: r.ai_tags ?? [], text: r.ai_text ?? '', checked: !!r.checked_by_ai, meta: r.ai_meta ?? null },
@@ -379,6 +382,17 @@ export function StoreProvider({
         )
         setFollows((check(fo).data as { following_id: string }[]).map((x) => x.following_id))
         setMineFor(uid)
+        // свои скрытые идеи: в общей ленте их нет (видит только автор) — добавляем, чтобы автор видел их и причину
+        supabase
+          .from('posts')
+          .select('*')
+          .eq('author_id', uid)
+          .eq('hidden', true)
+          .then(({ data }) => {
+            if (!live || !data?.length) return
+            const mine = (data as PostRow[]).map(toPost)
+            setPosts((ps) => [...mine, ...ps.filter((p) => !mine.some((m) => m.id === p.id))])
+          })
       })
       .catch(() => {
         if (!live) return

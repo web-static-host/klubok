@@ -129,6 +129,20 @@ function gcFetch(url: string, init: RequestInit = {}) {
   return fetch(url, { ...init, client: tlsClient } as RequestInit)
 }
 
+/**
+ * Запрос в ГигаЧат с повтором, если он занят (429): у личного тарифа один поток, и подробный разбор прошлой идеи
+ * в фоне может ещё идти. Ждём до ~60 с.
+ */
+async function gcFetchWait(url: string, init: RequestInit = {}) {
+  const until = Date.now() + 60_000
+  for (;;) {
+    const res = await gcFetch(url, init)
+    if (res.status !== 429 || Date.now() > until) return res
+    await res.body?.cancel()
+    await new Promise((ok) => setTimeout(ok, 1500))
+  }
+}
+
 let token: { value: string; exp: number } | undefined
 /**
  * Пропуск в ГигаЧат (действует ~30 минут). Supabase часто запускает для запроса новую копию функции,
@@ -285,7 +299,7 @@ let cold = true
 
 async function gcAsk(system: string, user: string, attachments: string[] = [], allowPeopleNow = false, tm?: Timing): Promise<Verdict> {
   const t = performance.now()
-  const res = await gcFetch(`${GC_API}/chat/completions`, {
+  const res = await gcFetchWait(`${GC_API}/chat/completions`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${await gcToken()}`, 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({
@@ -370,30 +384,53 @@ function prepareImage(src: string, tm: Timing): Promise<Prepared> {
   })
 }
 
-async function aiCheckImage(src: string, allowPeople = false, tm: Timing = {}, early?: Promise<Prepared>): Promise<Verdict> {
+/**
+ * Картинка → ГигаЧат. Время ответа почти целиком зависит от того, сколько он пишет (~0,05 с на токен), поэтому два вида:
+ * quick — сразу при загрузке: можно ли по правилам, есть ли люди, название и категории (коротко, ~3–4 с);
+ * full — после публикации, в фоне: весь текст с картинки и раскладка идеи для поиска и рекомендаций (10–25 с).
+ */
+async function aiCheckImage(
+  src: string,
+  allowPeople = false,
+  tm: Timing = {},
+  early?: Promise<Prepared>,
+  mode: 'quick' | 'full' = 'quick',
+): Promise<Verdict> {
   const { bytes, type, auth } = await (early ?? prepareImage(src, tm))
   const form = new FormData()
   form.append('file', new Blob([bytes], { type }), 'image.jpg')
   form.append('purpose', 'general')
   const t = performance.now()
-  const up = await gcFetch(`${GC_API}/files`, { method: 'POST', headers: { Authorization: `Bearer ${auth}` }, body: form })
+  const up = await gcFetchWait(`${GC_API}/files`, { method: 'POST', headers: { Authorization: `Bearer ${auth}` }, body: form })
   if (!up.ok) throw new Error(`GigaChat: картинка не загрузилась (${up.status}) ${(await up.text()).slice(0, 200)}`)
   const { id } = await up.json()
   tm.upload = ms(t)
   try {
-    return await gcAsk(
-      `Ты — модератор картинок. ${RULES}
+    return mode === 'quick'
+      ? await gcAsk(
+          `Ты — модератор картинок. ${RULES}
 ${
-        allowPeople
-          ? 'Это фото профиля (аватар): люди и лица на нём разрешены, остальные правила действуют. Поле people всегда false.'
-          : 'Отдельное правило: на картинках публикаций не должно быть людей. people = true ТОЛЬКО если явно видно лицо человека или человеческая фигура/тело (на фото или реалистичном рисунке). НЕ люди: руки и пальцы, еда, посуда, предметы, растения, животные, иконки, схемы, нарисованные человечки-значки. Если сомневаешься — people = false.'
-      }
+            allowPeople
+              ? 'Это фото профиля (аватар): люди и лица на нём разрешены, остальные правила действуют. Поле people всегда false.'
+              : 'Отдельное правило: на картинках публикаций не должно быть людей. people = true ТОЛЬКО если явно видно лицо человека или человеческая фигура/тело (на фото или реалистичном рисунке). НЕ люди: руки и пальцы, еда, посуда, предметы, растения, животные, иконки, схемы, нарисованные человечки-значки. Если сомневаешься — people = false.'
+          }
+Внимательно посмотри на весь текст на картинке: ссылка, адрес сайта, @ник, телефон, почта, QR-код, призыв написать или купить — это нарушение (ok = false).
 ok = false ставь только при явном нарушении правил; рецепты, инструкции, инфографика с текстом и цифрами — это нормально.
-Ещё разложи, что за идея на картинке (это нужно для поиска и рекомендаций; одинаково для любых картинок — рецептов, лайфхаков, интерьеров, рукоделия, сада). Слова — по-русски, строчными, в начальной форме.
+Ответь коротко, только JSON без пояснений:
+{"ok": true или false, "people": true или false, "reasons": ["коротко по-русски, что нарушено"],
+ "title": "название идеи для людей, 2–7 слов, с большой буквы, без кавычек и точки, как заголовок поста: «Сырники без муки», «Органайзер для проводов из прищепок»",
+ "topics": ["1–5 подходящих категорий сайта, только из этого списка, пиши id: ${TOPICS.map(([id, label]) => `${id} — ${label}`).join(', ')}"]}`,
+          'Проверь картинку по правилам и придумай ей название и категории.',
+          [id],
+          allowPeople,
+          tm,
+        )
+      : await gcAsk(
+          `Ты разбираешь картинку из соцсети идей (рецепты, лайфхаки, дом, сад, рукоделие) для поиска и рекомендаций.
+Разложи, что за идея на картинке; одинаково для любых картинок. Слова — по-русски, строчными, в начальной форме.
 В main, techniques, tools НЕ пиши то, что есть почти в любой такой идее: соль, перец, вода, сахар, масло, мука, специи, зелень, посуда, руки. Только то, что отличает именно эту идею.
 Ответь только JSON без пояснений:
-{"ok": true или false, "people": true или false, "reasons": ["коротко по-русски, что нарушено"],
- "text": "весь текст с картинки дословно, или пусто", "description": "одно предложение: что на картинке",
+{"text": "весь текст с картинки дословно, или пусто", "description": "одно предложение: что на картинке",
  "idea": "идея одной фразой, 2–6 слов: «креветки в сливочном соусе», «органайзер для проводов из прищепок», «спальня в скандинавском стиле»",
  "kind": "одно из: ${KINDS.join(', ')}",
  "main": ["2–6 главных объектов, без которых идеи нет"],
@@ -403,14 +440,12 @@ ok = false ставь только при явном нарушении прав
  "style": ["0–3 характер и стиль: сливочное, острое, постное, вегетарианское, полезное; скандинавский, минимализм, винтаж"],
  "related": ["3–6 общих тем, по которым человеку можно посоветовать похожее: морепродукты, блюда на сковороде, ужин за 30 минут, хранение на кухне"],
  "difficulty": "легко, средне или сложно",
- "time": "быстро, около часа или долго",
- "title": "название идеи для людей, 2–7 слов, с большой буквы, без кавычек и точки, как заголовок поста: «Сырники без муки», «Органайзер для проводов из прищепок»",
- "topics": ["1–5 подходящих категорий сайта, только из этого списка, пиши id: ${TOPICS.map(([id, label]) => `${id} — ${label}`).join(', ')}"]}`,
-      'Проверь картинку по правилам и опиши её.',
-      [id],
-      allowPeople,
-      tm,
-    )
+ "time": "быстро, около часа или долго"}`,
+          'Разбери картинку.',
+          [id],
+          true,
+          tm,
+        )
   } finally {
     gcFetch(`${GC_API}/files/${id}/delete`, { method: 'POST', headers: { Authorization: `Bearer ${await gcToken()}` } }).catch(() => {})
   }
@@ -500,6 +535,56 @@ async function checkImage(img: ImgIn, uid: string, allowPeople: boolean, tm: Tim
   return res
 }
 
+/**
+ * Подробный разбор картинок идеи — уже после публикации, в фоне: весь текст с картинок и раскладка для поиска и рекомендаций.
+ * Строгая проверка текста с картинки (ссылки, мат): нашлось — идея скрывается для всех, автор видит причину.
+ * Картинки — по одной (у ИИ один поток); функция живёт ограниченное время, поэтому не дольше ~100 с.
+ */
+async function describePost(postId: string, images: ImgIn[], quick: Meta) {
+  const start = performance.now()
+  const metas: Meta[] = []
+  const texts: string[] = []
+  const bad: string[] = []
+  for (const [i, img] of images.entries()) {
+    if (performance.now() - start > 100_000) break
+    const path = img.src.slice(PUBLIC_PREFIX.length)
+    const { data: saved } = await admin.from('image_checks').select('meta, ai_text').eq('path', path).maybeSingle()
+    // эту картинку уже разбирали подробно (публиковали раньше) — берём готовое
+    if (saved?.meta?.idea) {
+      metas.push(parseMeta(saved.meta))
+      if (saved.ai_text) texts.push(saved.ai_text)
+      continue
+    }
+    try {
+      const v = await aiCheckImage(img.src, true, {}, undefined, 'full')
+      const meta: Meta = { ...v.meta, title: saved?.meta?.title ?? '', topics: topicIds(saved?.meta?.topics) }
+      const text = [v.description, v.text].filter(Boolean).join('. ')
+      const found = imageTextCheck(v.text)
+      // плохая картинка отмечается и в проверках — с ней больше не опубликуют
+      await admin
+        .from('image_checks')
+        .update({ meta, ai_text: text || null, tags: metaTags(meta), ...(found.length ? { ok: false, reasons: found } : {}) })
+        .eq('path', path)
+      metas.push(meta)
+      if (text) texts.push(text)
+      bad.push(...found.map((r) => (images.length > 1 ? `Картинка ${i + 1}: ${r}` : r)))
+    } catch (e) {
+      console.error('подробный разбор не удался:', e instanceof Error ? e.message : e)
+    }
+  }
+  if (!metas.length) return
+  const meta = mergeMeta([quick, ...metas])
+  await admin
+    .from('posts')
+    .update({
+      ai_meta: meta,
+      ai_tags: metaTags(meta),
+      ai_text: texts.join('\n') || null,
+      ...(bad.length ? { hidden: true, hidden_reason: [...new Set(bad)].join('. ') } : {}),
+    })
+    .eq('id', postId)
+}
+
 /** Проверка текстов: быстрые правила, затем ИИ. ИИ недоступен — только быстрые правила */
 /** profile — тексты профиля [имя, ник, о себе]: ИИ получает их с подписями и пояснением про ник */
 async function checkTexts(texts: string[], profile = false): Promise<{ ok: boolean; reasons: string[]; ai: boolean }> {
@@ -563,8 +648,11 @@ export async function handle(req: Request): Promise<Response> {
   if (req.method === 'GET') {
     // проверка связи с GigaChat
     try {
-      await gcToken()
-      return json({ gigachat: 'ok', model: GC_MODEL })
+      const auth = await gcToken()
+      // какие модели доступны по нашему ключу (только названия)
+      const res = await gcFetch(`${GC_API}/models`, { headers: { Authorization: `Bearer ${auth}`, Accept: 'application/json' } })
+      const models = res.ok ? ((await res.json()).data ?? []).map((m: { id: string }) => m.id) : []
+      return json({ gigachat: 'ok', model: GC_MODEL, models })
     } catch (e) {
       return json({ gigachat: 'ошибка', detail: e instanceof Error ? e.message : String(e) }, 500)
     }
@@ -684,6 +772,8 @@ export async function handle(req: Request): Promise<Response> {
         .select()
         .single()
       if (error) return json({ ok: false, reasons: ['Не получилось сохранить'], detail: error.message }, 500)
+      // подробный разбор картинок — уже после ответа, человеку ждать незачем
+      later(describePost(data.id, images, m.meta))
       return json({ ok: true, row: data })
     }
 

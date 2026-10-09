@@ -38,6 +38,8 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
   const [busy, setBusy] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const [dragOver, setDragOver] = useState(false)
+  // какую миниатюру тащат (перестановка картинок)
+  const [dragFrom, setDragFrom] = useState<number | null>(null)
   // какая картинка показана крупно
   const [selRaw, setSel] = useState(0)
   const sel = Math.min(selRaw, Math.max(0, images.length - 1))
@@ -172,7 +174,8 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
         onDrop={(e) => {
           e.preventDefault()
           setDragOver(false)
-          addFiles([...e.dataTransfer.files])
+          // перетаскивают миниатюру внутри формы, а не файлы — это перестановка, не добавление
+          if (e.dataTransfer.types.includes('Files')) addFiles([...e.dataTransfer.files])
         }}
         onSubmit={(e) => {
           e.preventDefault()
@@ -270,42 +273,75 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
               </div>
               <div className="flex flex-wrap gap-2">
                 {images.map((it, i) => (
-                  <button
+                  // миниатюру можно перетащить мышкой на другое место; на телефоне — кнопки «Раньше» / «Позже» на большой картинке
+                  <div
                     key={it.key}
-                    type="button"
-                    onClick={() => setSel(i)}
-                    aria-label={`Показать картинку ${i + 1}`}
-                    aria-pressed={i === sel}
-                    className={cx(
-                      'press relative h-20 w-16 overflow-hidden rounded-xl bg-elevated ring-2 ring-offset-2 ring-offset-bg',
-                      i === sel ? 'ring-accent' : 'ring-transparent',
-                    )}
+                    draggable
+                    onDragStart={(e) => {
+                      setDragFrom(i)
+                      e.dataTransfer.effectAllowed = 'move'
+                    }}
+                    onDragOver={(e) => dragFrom !== null && e.preventDefault()}
+                    onDrop={(e) => {
+                      if (dragFrom === null) return
+                      e.preventDefault()
+                      e.stopPropagation()
+                      if (dragFrom !== i) {
+                        pics.reorder(dragFrom, i)
+                        setSel(i)
+                      }
+                      setDragFrom(null)
+                    }}
+                    onDragEnd={() => setDragFrom(null)}
+                    className={cx('relative', dragFrom === i && 'opacity-40')}
                   >
-                    <img src={it.preview.src} alt="" className={cx('h-full w-full object-cover', it.status === 'bad' && 'opacity-40')} />
-                    <span className="glass-strong absolute top-1 left-1 rounded-full px-1.5 text-[10px] leading-4 font-bold">
-                      {label(i)}
-                    </span>
-                    <span className="absolute right-1 bottom-1">
-                      {it.status === 'checking' && (
-                        <span className="glass-strong inline-flex h-5 w-5 items-center justify-center rounded-full" title="Проверяем">
-                          <Loader2 size={12} className="animate-spin" />
-                        </span>
+                    <button
+                      type="button"
+                      onClick={() => setSel(i)}
+                      aria-label={`Показать картинку ${i + 1}`}
+                      aria-pressed={i === sel}
+                      className={cx(
+                        'press relative block h-20 w-16 cursor-grab overflow-hidden rounded-xl bg-elevated ring-2 ring-offset-2 ring-offset-bg',
+                        i === sel ? 'ring-accent' : 'ring-transparent',
                       )}
-                      {it.status === 'ok' && (
-                        <span className="grad inline-flex h-5 w-5 items-center justify-center rounded-full" title="Проверено">
-                          <Check size={12} strokeWidth={3} />
-                        </span>
-                      )}
-                      {it.status === 'bad' && (
-                        <span
-                          className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-white"
-                          title="Не прошла"
-                        >
-                          <TriangleAlert size={12} />
-                        </span>
-                      )}
-                    </span>
-                  </button>
+                    >
+                      <img src={it.preview.src} alt="" className={cx('h-full w-full object-cover', it.status === 'bad' && 'opacity-40')} />
+                      <span className="glass-strong absolute top-1 left-1 rounded-full px-1.5 text-[10px] leading-4 font-bold">
+                        {label(i)}
+                      </span>
+                      <span className="absolute right-1 bottom-1">
+                        {it.status === 'checking' && (
+                          <span className="glass-strong inline-flex h-5 w-5 items-center justify-center rounded-full" title="Проверяем">
+                            <Loader2 size={12} className="animate-spin" />
+                          </span>
+                        )}
+                        {it.status === 'ok' && (
+                          <span className="grad inline-flex h-5 w-5 items-center justify-center rounded-full" title="Проверено">
+                            <Check size={12} strokeWidth={3} />
+                          </span>
+                        )}
+                        {it.status === 'bad' && (
+                          <span
+                            className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-white"
+                            title="Не прошла"
+                          >
+                            <TriangleAlert size={12} />
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Убрать картинку ${i + 1}`}
+                      onClick={() => {
+                        pics.remove(it.key)
+                        if (sel > i) setSel(sel - 1)
+                      }}
+                      className="press glass-strong absolute -top-1.5 -right-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full shadow"
+                    >
+                      <X size={13} strokeWidth={2.6} />
+                    </button>
+                  </div>
                 ))}
                 {images.length < MAX && (
                   <button
@@ -381,8 +417,8 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
                 className="mt-0.5 h-5 w-5 shrink-0 accent-accent"
               />
               <span className="text-sm leading-snug">
-                <b>До и после</b> — 1-я картинка «до», 2-я «после», они встанут рядом. Дальше — как вы это сделали: нужна хотя бы ещё одна
-                картинка.
+                <b>Было → стало</b>
+                <span className="block text-xs text-muted">1-я и 2-я картинки встанут рядом. Дальше — как делали, хотя бы одна.</span>
                 {beforeAfter && images.length < 3 && <span className="mt-1 block font-semibold text-accent">Добавьте ещё картинку</span>}
               </span>
             </label>

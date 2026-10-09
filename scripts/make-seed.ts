@@ -45,13 +45,13 @@ out.push(
   '',
 )
 
-out.push('insert into posts (id, author_id, type, topic, title, images, tags, likes_count, created_at) values')
+out.push('insert into posts (id, author_id, type, topic, topics, title, images, tags, created_at) values')
 out.push(
   posts
     .map(
       (p) =>
-        `  (${q(postId(p.id))}, ${q(userId(p.authorId))}, ${q(p.type)}, ${q(p.topic)}, ${q(p.title)}, ` +
-        `${json(p.images.map(pic))}, ${arr(p.tags)}, ${p.likes}, ${ago(p.createdAt)})`,
+        `  (${q(postId(p.id))}, ${q(userId(p.authorId))}, ${q(p.type)}, ${q(p.topics[0])}, ${arr(p.topics)}, ${q(p.title)}, ` +
+        `${json(p.images.map(pic))}, ${arr(p.tags)}, ${ago(p.createdAt)})`,
     )
     .join(',\n') + ';',
   '',

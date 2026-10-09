@@ -5,7 +5,7 @@
 -- ─── Очистка ────────────────────────────────────────────────
 drop trigger if exists on_auth_user_created on auth.users;
 drop table if exists image_checks, try_replies, likes, follows, folder_items, folders, tries, posts, profiles cascade;
-drop function if exists handle_new_user, bump_post_likes, bump_followers, bump_post_tries cascade;
+drop function if exists handle_new_user, bump_post_likes, bump_post_saves, bump_followers, bump_post_tries, track_posts cascade;
 drop type if exists post_type, post_topic cascade;
 
 -- ─── Типы ───────────────────────────────────────────────────
@@ -33,8 +33,9 @@ create table posts (
   id uuid primary key default gen_random_uuid(),
   author_id uuid not null references profiles (id) on delete cascade,
   type post_type not null,
-  -- категория: id из списка на сайте (recipes, baking …) или своя, вписанная автором
+  -- категории (1–5): id из списка на сайте (recipes, baking …) или свои, вписанные автором; topic — первая из них
   topic text not null check (char_length(topic) between 1 and 40),
+  topics text[] not null default '{}' check (cardinality(topics) between 1 and 5),
   title text not null check (char_length(title) between 1 and 120),
   images jsonb not null default '[]' check (jsonb_typeof(images) = 'array' and jsonb_array_length(images) between 1 and 10),
   -- скрытые слова для поиска; на сайте не показываются
@@ -46,7 +47,11 @@ create table posts (
   ai_meta jsonb,
   -- проверено ли ИИ (если ИИ был недоступен — только быстрые проверки)
   checked_by_ai boolean not null default false,
-  likes_count int not null default 0,
+  -- сколько человек сохранили в свои папки (считает база)
+  saves_count int not null default 0,
+  -- статистика для автора: показы карточки в ленте и клики по ней (функция track_posts)
+  views_count int not null default 0,
+  clicks_count int not null default 0,
   tries_count int not null default 0,
   tries_ok_count int not null default 0,
   created_at timestamptz not null default now()
@@ -54,6 +59,7 @@ create table posts (
 create index posts_created_idx on posts (created_at desc);
 create index posts_author_idx on posts (author_id, created_at desc);
 create index posts_topic_idx on posts (topic, created_at desc);
+create index posts_topics_idx on posts using gin (topics);
 
 -- ─── «Я попробовал» ─────────────────────────────────────────
 create table tries (
@@ -115,7 +121,7 @@ create table image_checks (
 -- читать и писать может только функция publish
 alter table image_checks enable row level security;
 
--- ─── Подписки и лайки ───────────────────────────────────────
+-- ─── Подписки ───────────────────────────────────────────────
 create table follows (
   follower_id uuid not null references profiles (id) on delete cascade,
   following_id uuid not null references profiles (id) on delete cascade,
@@ -125,25 +131,19 @@ create table follows (
 );
 create index follows_following_idx on follows (following_id);
 
-create table likes (
-  user_id uuid not null references profiles (id) on delete cascade,
-  post_id uuid not null references posts (id) on delete cascade,
-  created_at timestamptz not null default now(),
-  primary key (user_id, post_id)
-);
-
 -- ─── Счётчики (обновляются сами) ────────────────────────────
-create function bump_post_likes() returns trigger
+-- «в избранном»: сколько разных людей сохранили пост (в любые свои папки)
+create function bump_post_saves() returns trigger
 language plpgsql security definer set search_path = public as $$
+declare
+  pid uuid := case when tg_op = 'DELETE' then old.post_id else new.post_id end;
 begin
-  if tg_op = 'INSERT' then
-    update posts set likes_count = likes_count + 1 where id = new.post_id;
-  else
-    update posts set likes_count = greatest(likes_count - 1, 0) where id = old.post_id;
-  end if;
+  update posts p set saves_count = (
+    select count(distinct f.owner_id) from folder_items fi join folders f on f.id = fi.folder_id where fi.post_id = pid
+  ) where p.id = pid;
   return null;
 end $$;
-create trigger likes_count after insert or delete on likes for each row execute function bump_post_likes();
+create trigger saves_count after insert or delete on folder_items for each row execute function bump_post_saves();
 
 create function bump_followers() returns trigger
 language plpgsql security definer set search_path = public as $$
@@ -171,10 +171,19 @@ begin
 end $$;
 create trigger tries_count after insert or update or delete on tries for each row execute function bump_post_tries();
 
+-- показы и клики: сайт присылает пачкой (не больше 100 за раз); напрямую менять счётчики нельзя
+create function track_posts(views uuid[] default '{}', clicks uuid[] default '{}') returns void
+language sql security definer set search_path = public as $$
+  update posts set views_count = views_count + 1 where id = any ((coalesce(views, '{}'::uuid[]))[1:100]);
+  update posts set clicks_count = clicks_count + 1 where id = any ((coalesce(clicks, '{}'::uuid[]))[1:100]);
+$$;
+revoke all on function track_posts(uuid[], uuid[]) from public;
+grant execute on function track_posts(uuid[], uuid[]) to anon, authenticated;
+
 -- Счётчики нельзя подделать с сайта: менять разрешено только обычные поля.
 revoke update on profiles, posts, tries, folder_items, try_replies from anon, authenticated;
 grant update (name, handle, bio, colors, avatar_url) on profiles to authenticated;
-grant update (topic, title, images, tags) on posts to authenticated;
+grant update (topic, topics, title, images, tags) on posts to authenticated;
 grant update (ok, text, img) on tries to authenticated;
 grant update (done) on folder_items to authenticated;
 
@@ -211,7 +220,6 @@ alter table tries enable row level security;
 alter table folders enable row level security;
 alter table folder_items enable row level security;
 alter table follows enable row level security;
-alter table likes enable row level security;
 alter table try_replies enable row level security;
 
 create policy "профили видны всем" on profiles for select using (true);
@@ -233,10 +241,6 @@ create policy "своя подписка: удалить" on follows for delete 
 
 create policy "ответы видны всем" on try_replies for select using (true);
 create policy "свой ответ: удалить" on try_replies for delete to authenticated using (user_id = auth.uid());
-
-create policy "лайки видны всем" on likes for select using (true);
-create policy "свой лайк: создать" on likes for insert to authenticated with check (user_id = auth.uid());
-create policy "свой лайк: удалить" on likes for delete to authenticated using (user_id = auth.uid());
 
 -- ─── Хранилище фото ─────────────────────────────────────────
 -- Папка images: смотреть могут все, загружать — только в свою подпапку <id пользователя>/…, до 5 МБ, только картинки.

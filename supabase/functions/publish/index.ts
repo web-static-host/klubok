@@ -519,13 +519,16 @@ export async function handle(req: Request): Promise<Response> {
 
     case 'post': {
       const title = str(body.title, 80)
-      const topic = str(body.topic, 40)
+      // категории: от 1 до 5 (старый сайт присылает одну — topic)
+      const topics = [
+        ...new Set((Array.isArray(body.topics) ? body.topics : [body.topic]).map((t) => str(t, 40)).filter(Boolean)),
+      ].slice(0, 5)
       const images = (Array.isArray(body.images) ? body.images : []) as ImgIn[]
       const type = body.type === 'beforeafter' && images.length === 2 ? 'beforeafter' : 'photo'
-      if (!title || !topic) return json({ ok: false, reasons: ['Нужны название и категория'] }, 400)
+      if (!title || !topics.length) return json({ ok: false, reasons: ['Нужны название и категория'] }, 400)
       if (images.length < 1 || images.length > 10 || !images.every((i) => ownImage(i, uid)))
         return json({ ok: false, reasons: ['Нужно от 1 до 10 своих картинок'] }, 400)
-      const m = await moderate([title, topic], images, uid)
+      const m = await moderate([title, ...topics], images, uid)
       // картинки не удаляем: человек исправит название или уберёт плохую картинку и опубликует снова
       if (!m.ok) return json({ ok: false, reasons: m.reasons })
       const { data, error } = await admin
@@ -533,7 +536,8 @@ export async function handle(req: Request): Promise<Response> {
         .insert({
           author_id: uid,
           type,
-          topic,
+          topic: topics[0],
+          topics,
           title,
           images: images.map((i) => ({ src: i.src, ratio: Number(i.ratio) })),
           ai_tags: m.tags,

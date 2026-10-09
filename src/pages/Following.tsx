@@ -1,19 +1,18 @@
 import { Link } from 'react-router-dom'
-import { Bookmark, CircleCheck, Heart, MessageCircle, Users } from 'lucide-react'
+import { Bookmark, CircleCheck, MessageCircle, Users } from 'lucide-react'
 import type { Post } from '../data/types'
 import { useStore } from '../store'
 import { useUi } from '../ui-context'
-import { cx, num, plural, timeAgo } from '../lib'
+import { num, plural, timeAgo } from '../lib'
 import { MobileTop } from '../components/Layout'
 import { Avatar, Button, Empty, TopicBadge } from '../components/ui'
 import { Gallery } from '../components/Gallery'
 
 /** Лента подписок — одна колонка, как в Instagram (DESIGN_WEB 3.4) */
 function FeedCard({ post }: { post: Post }) {
-  const { user, likes, toggleLike, triesOf, savedIn, me } = useStore()
+  const { user, triesOf, savedIn, me } = useStore()
   const { openSave, openTried } = useUi()
   const a = user(post.authorId)
-  const liked = likes.includes(post.id)
   const tries = triesOf(post.id)
   const ok = tries.filter((t) => t.ok).length
   const saved = savedIn(post.id).length > 0
@@ -30,22 +29,12 @@ function FeedCard({ post }: { post: Post }) {
           </Link>
           <span className="text-xs">{timeAgo(post.createdAt)}</span>
         </div>
-        <TopicBadge topic={post.topic} className="max-w-[45%]" />
+        <TopicBadge topic={post.topics[0]} className="max-w-[45%]" />
       </header>
 
       <Gallery post={post} maxRatio={1.25} />
 
       <div className="mt-2 flex items-center gap-1">
-        <button
-          type="button"
-          onClick={() => toggleLike(post.id)}
-          aria-pressed={liked}
-          aria-label="Нравится"
-          className="press inline-flex h-10 items-center gap-1.5 rounded-2xl px-2 text-sm font-semibold whitespace-nowrap hover:bg-active"
-        >
-          <Heart size={20} className={cx(liked && 'fill-rose-500 text-rose-500')} />
-          {num(post.likes)}
-        </button>
         <Link
           to={`/p/${post.id}?tab=tries`}
           className="press inline-flex h-10 items-center gap-1.5 rounded-2xl px-2 text-sm font-semibold whitespace-nowrap hover:bg-active"
@@ -71,6 +60,7 @@ function FeedCard({ post }: { post: Post }) {
         >
           <Bookmark size={20} fill={saved ? 'currentColor' : 'none'} />
         </button>
+        {post.saves > 0 && <span className="-ml-1 text-sm font-semibold">{num(post.saves)}</span>}
       </div>
 
       <Link to={`/p/${post.id}`} className="mt-1 block px-1">

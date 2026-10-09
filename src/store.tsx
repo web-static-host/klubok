@@ -12,7 +12,8 @@ export type ThemeMode = 'system' | 'light' | 'dark'
 /** Новый пост: что заполняет автор */
 export interface NewPost {
   type: PostType
-  topic: Topic
+  /** 1–5 категорий */
+  topics: Topic[]
   title: string
   images: Img[]
 }
@@ -33,14 +34,12 @@ interface Store {
   replies: Reply[]
   folders: Folder[]
   follows: string[]
-  likes: string[]
   theme: ThemeMode
   user: (id: string) => User
   post: (id: string) => Post | undefined
   triesOf: (postId: string) => Try[]
   repliesOf: (tryId: string) => Reply[]
   toggleFollow: (userId: string) => void
-  toggleLike: (postId: string) => void
   addPost: (p: NewPost) => Promise<string>
   /** удалить свою идею (вместе с отзывами и картинками); не вышло — исключение Rejected */
   deletePost: (id: string) => Promise<void>
@@ -105,7 +104,11 @@ interface PostRow {
   ai_text: string | null
   ai_meta: AiMeta | null
   checked_by_ai: boolean
-  likes_count: number
+  /** категории (до обновления 007 — только topic) */
+  topics?: string[]
+  saves_count?: number
+  views_count?: number
+  clicks_count?: number
   created_at: string
 }
 interface TryRow {
@@ -130,12 +133,13 @@ const toUser = (r: ProfileRow): User => ({
 const toPost = (r: PostRow): Post => ({
   id: r.id,
   type: r.type === 'beforeafter' ? 'beforeafter' : 'photo',
-  topic: r.topic,
+  topics: r.topics?.length ? r.topics : [r.topic],
   title: r.title,
   authorId: r.author_id,
   createdAt: Date.parse(r.created_at),
   images: r.images,
-  likes: r.likes_count,
+  saves: r.saves_count ?? 0,
+  stats: { views: r.views_count ?? 0, clicks: r.clicks_count ?? 0 },
   tags: [...r.tags, ...(r.ai_tags ?? [])],
   ai: { tags: r.ai_tags ?? [], text: r.ai_text ?? '', checked: !!r.checked_by_ai, meta: r.ai_meta ?? null },
 })
@@ -272,7 +276,6 @@ export function StoreProvider({
   const [replies, setReplies] = useState<Reply[]>(() => cached?.[3].map(toReply) ?? [])
   const [folders, setFolders] = useState<Folder[]>([])
   const [follows, setFollows] = useState<string[]>([])
-  const [likes, setLikes] = useState<string[]>([])
   const [theme, setThemeState] = useState<ThemeMode>(loadTheme)
   const [loginOpen, setLoginOpen] = useState(false)
   const [recoveryOpen, setRecoveryOpen] = useState(!!recovery)
@@ -333,7 +336,6 @@ export function StoreProvider({
     if (!uid) {
       setFolders([])
       setFollows([])
-      setLikes([])
       return
     }
     let live = true
@@ -341,9 +343,8 @@ export function StoreProvider({
       supabase.from('folders').select('id, name').order('created_at'),
       supabase.from('folder_items').select('folder_id, post_id, done').order('added_at', { ascending: false }),
       supabase.from('follows').select('following_id').eq('follower_id', uid),
-      supabase.from('likes').select('post_id').eq('user_id', uid),
     ])
-      .then(([f, fi, fo, l]) => {
+      .then(([f, fi, fo]) => {
         if (!live) return
         const items = check(fi).data as { folder_id: string; post_id: string; done: boolean }[]
         setFolders(
@@ -355,7 +356,6 @@ export function StoreProvider({
           })),
         )
         setFollows((check(fo).data as { following_id: string }[]).map((x) => x.following_id))
-        setLikes((check(l).data as { post_id: string }[]).map((x) => x.post_id))
       })
       .catch(() => live && setNotice('Не удалось загрузить ваши папки. Обновите страницу.'))
     return () => {
@@ -419,6 +419,10 @@ export function StoreProvider({
     return { src: canonical(supabase.storage.from('images').getPublicUrl(path).data.publicUrl), ratio: img.ratio }
   }
 
+  /** счётчик «в избранном» на сайте сразу, не дожидаясь базы (в базе его считает сама база) */
+  const bumpSaves = (pid: string, d: number) =>
+    setPosts((ps) => ps.map((p) => (p.id === pid ? { ...p, saves: Math.max(0, p.saves + d) } : p)))
+
   const value: Store = {
     // проверка входа идёт одновременно с загрузкой данных, ждём обе — чтобы не мигала кнопка «Войти»
     ready: loaded && authKnown,
@@ -433,7 +437,6 @@ export function StoreProvider({
     replies,
     folders,
     follows,
-    likes,
     theme,
     user,
     post,
@@ -450,17 +453,6 @@ export function StoreProvider({
           : supabase.from('follows').insert({ follower_id: uid, following_id: id }),
       )
     },
-    toggleLike: (id) => {
-      if (needLogin()) return
-      const on = likes.includes(id)
-      setLikes((l) => (on ? l.filter((x) => x !== id) : [...l, id]))
-      setPosts((ps) => ps.map((p) => (p.id === id ? { ...p, likes: Math.max(0, p.likes + (on ? -1 : 1)) } : p)))
-      save(
-        on
-          ? supabase.from('likes').delete().eq('user_id', uid).eq('post_id', id)
-          : supabase.from('likes').insert({ user_id: uid, post_id: id }),
-      )
-    },
     uploadImg: (img) => upload(img),
     checkImg: async (img, purpose) => {
       const { data, error } = await supabase.functions.invoke('publish', { body: { action: 'check-image', img, purpose } })
@@ -470,7 +462,7 @@ export function StoreProvider({
     addPost: async (data) => {
       if (!uid) throw new Error('not signed in')
       const images = await Promise.all(data.images.map(upload))
-      const p = toPost((await publish({ action: 'post', type: data.type, topic: data.topic, title: data.title, images })) as PostRow)
+      const p = toPost((await publish({ action: 'post', type: data.type, topics: data.topics, title: data.title, images })) as PostRow)
       setPosts((ps) => [p, ...ps])
       return p.id
     },
@@ -478,7 +470,6 @@ export function StoreProvider({
       await publish({ action: 'delete-post', postId: id })
       setPosts((ps) => ps.filter((p) => p.id !== id))
       setTries((ts) => ts.filter((t) => t.postId !== id))
-      setLikes((ls) => ls.filter((x) => x !== id))
       setFolders((fs) => fs.map((f) => ({ ...f, postIds: f.postIds.filter((x) => x !== id), done: f.done.filter((x) => x !== id) })))
     },
     addTry: async (postId, ok, text, img) => {
@@ -496,11 +487,14 @@ export function StoreProvider({
     },
     saveTo: (fid, pid) => {
       if (needLogin()) return
+      if (!folders.some((f) => f.postIds.includes(pid))) bumpSaves(pid, 1)
       setFolders((fs) => fs.map((f) => (f.id === fid && !f.postIds.includes(pid) ? { ...f, postIds: [pid, ...f.postIds] } : f)))
       save(supabase.from('folder_items').upsert({ folder_id: fid, post_id: pid }, { ignoreDuplicates: true }))
     },
     unsaveFrom: (fid, pid) => {
       if (needLogin()) return
+      if (!folders.some((f) => f.id !== fid && f.postIds.includes(pid)) && folders.some((f) => f.id === fid && f.postIds.includes(pid)))
+        bumpSaves(pid, -1)
       setFolders((fs) =>
         fs.map((f) => (f.id === fid ? { ...f, postIds: f.postIds.filter((x) => x !== pid), done: f.done.filter((x) => x !== pid) } : f)),
       )
@@ -509,6 +503,7 @@ export function StoreProvider({
     createFolder: (name, pid) => {
       if (needLogin()) return ''
       const id = crypto.randomUUID()
+      if (pid && !folders.some((f) => f.postIds.includes(pid))) bumpSaves(pid, 1)
       setFolders((fs) => [...fs, { id, name, postIds: pid ? [pid] : [], done: [] }])
       save(
         supabase

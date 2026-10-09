@@ -12,8 +12,9 @@ import { useCheckedImages } from './useCheckedImages'
 import { Button, Chip } from './ui'
 
 const field = 'card w-full px-4 py-3 text-base outline-none placeholder:text-muted'
-const OWN = '__own'
 const MAX = 10
+/** категорий у идеи — до 5 */
+const MAX_TOPICS = 5
 
 /** Создание поста: картинки (вся идея на них), название, категория — DESIGN_WEB 3.9 */
 export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -27,7 +28,9 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
   const [waiting, setWaiting] = useState(false)
   const [beforeAfter, setBeforeAfter] = useState(false)
   const [title, setTitle] = useState('')
-  const [topic, setTopic] = useState<Topic>('')
+  const [topics, setTopics] = useState<Topic[]>([])
+  // поле «своя категория» открыто
+  const [ownOpen, setOwnOpen] = useState(false)
   const [own, setOwn] = useState('')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
@@ -74,7 +77,8 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
     setWaiting(false)
     setBeforeAfter(false)
     setTitle('')
-    setTopic('')
+    setTopics([])
+    setOwnOpen(false)
     setOwn('')
     setErr('')
   }
@@ -84,18 +88,43 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
     onClose()
   }
 
+  /** Включить/выключить категорию из списка */
+  const toggleTopic = (t: Topic) => {
+    if (topics.includes(t)) return setTopics(topics.filter((x) => x !== t))
+    if (topics.length >= MAX_TOPICS) return setErr(`Не больше ${MAX_TOPICS} категорий`)
+    setErr('')
+    setTopics([...topics, t])
+  }
+  /** Добавить вписанную свою категорию; вернёт новый список или null, если нельзя */
+  const addOwn = (): Topic[] | null => {
+    const name = own.trim().replace(/\s+/g, ' ')
+    if (!name) return topics
+    // вписали существующую — берём её из списка
+    const t = TOPICS.find((x) => x.label.toLowerCase() === name.toLowerCase())?.id ?? name[0].toUpperCase() + name.slice(1)
+    if (topics.some((x) => x.toLowerCase() === t.toLowerCase())) {
+      setOwn('')
+      return topics
+    }
+    if (topics.length >= MAX_TOPICS) {
+      setErr(`Не больше ${MAX_TOPICS} категорий`)
+      return null
+    }
+    const next = [...topics, t]
+    setTopics(next)
+    setOwn('')
+    setErr('')
+    return next
+  }
+  const ownTopics = topics.filter((t) => !TOPICS.some((x) => x.id === t))
+
   const publish = async () => {
     setWaiting(false)
     if (!images.length) return setErr('Добавьте хотя бы одну картинку')
     if (!title.trim()) return setErr('Напишите название')
-    let t = topic
-    if (topic === OWN) {
-      const name = own.trim().replace(/\s+/g, ' ')
-      if (!name) return setErr('Впишите свою категорию')
-      // вписали существующую — берём её из списка
-      t = TOPICS.find((x) => x.label.toLowerCase() === name.toLowerCase())?.id ?? name[0].toUpperCase() + name.slice(1)
-    }
-    if (!t) return setErr('Выберите категорию')
+    // вписали свою, но не нажали «Добавить» — добавим сами
+    const list = own.trim() ? addOwn() : topics
+    if (!list) return
+    if (!list.length) return setErr('Выберите хотя бы одну категорию')
     if (pics.bad) return setErr('Уберите картинки, которые не прошли проверку (отмечены красным)')
     if (pics.pending) {
       setErr('')
@@ -105,7 +134,7 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
     try {
       const id = await addPost({
         type: beforeAfter && images.length === 2 ? 'beforeafter' : 'photo',
-        topic: t,
+        topics: list,
         title: title.trim().replace(/\s+/g, ' '),
         images: pics.result(),
       })
@@ -290,27 +319,47 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
         />
 
         <div>
-          <p className="section-label mb-2">Категория</p>
+          <p className="section-label mb-2">
+            Категории · до {MAX_TOPICS}
+            {topics.length > 0 && <span className="normal-case"> (выбрано {topics.length})</span>}
+          </p>
           <div className="flex flex-wrap gap-2">
             {TOPICS.map((t) => (
-              <Chip key={t.id} active={topic === t.id} onClick={() => setTopic(t.id)}>
+              <Chip key={t.id} active={topics.includes(t.id)} onClick={() => toggleTopic(t.id)}>
                 {t.label}
               </Chip>
             ))}
-            <Chip active={topic === OWN} onClick={() => setTopic(OWN)}>
+            {ownTopics.map((t) => (
+              <Chip key={t} active onClick={() => toggleTopic(t)}>
+                <span className="inline-flex items-center gap-1">
+                  {t} <X size={14} strokeWidth={2.4} aria-label="убрать" />
+                </span>
+              </Chip>
+            ))}
+            <Chip active={ownOpen} onClick={() => setOwnOpen((v) => !v)}>
               <span className="inline-flex items-center gap-1">
                 <Plus size={14} strokeWidth={2.4} /> Своя
               </span>
             </Chip>
           </div>
-          <input
-            value={own}
-            onChange={(e) => setOwn(e.target.value)}
-            maxLength={40}
-            placeholder="Например: Аквариум"
-            aria-label="Своя категория"
-            className={cx(field, 'mt-2', topic !== OWN && 'hidden')}
-          />
+          <div className={cx('mt-2 flex gap-2', !ownOpen && 'hidden')}>
+            <input
+              value={own}
+              onChange={(e) => setOwn(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return
+                e.preventDefault()
+                addOwn()
+              }}
+              maxLength={40}
+              placeholder="Например: Аквариум"
+              aria-label="Своя категория"
+              className={cx(field, 'min-w-0 flex-1')}
+            />
+            <Button kind="secondary" onClick={() => addOwn()} disabled={!own.trim()}>
+              Добавить
+            </Button>
+          </div>
         </div>
 
         {err && (

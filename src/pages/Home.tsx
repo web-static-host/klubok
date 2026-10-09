@@ -5,18 +5,18 @@ import { MobileTop } from '../components/Layout'
 import { Masonry } from '../components/Masonry'
 import { Chip } from '../components/ui'
 
-/** «Для вас» — лента-плитка. Порядок пока простой: свежее и популярное вперемешку. */
+/** «Для вас» — лента-плитка. Порядок пока простой: свежее и часто сохраняемое вперемешку. */
 export function Home() {
   const { posts } = useStore()
   const [topic, setTopic] = useState<Topic | 'all'>('all')
   // таблетки — только категории, в которых есть посты: сначала из списка, потом свои
   const topics = useMemo(() => {
-    const used = new Set(posts.map((p) => p.topic))
+    const used = new Set(posts.flatMap((p) => p.topics))
     const own = [...used].filter((t) => !TOPICS.some((x) => x.id === t))
     return [...TOPICS.map((x) => x.id).filter((t) => used.has(t)), ...own]
   }, [posts])
-  const list = (topic === 'all' ? posts : posts.filter((p) => p.topic === topic))
-    .map((p, i) => ({ p, score: p.likes / 1000 + (posts.length - i) / 6 }))
+  const list = (topic === 'all' ? posts : posts.filter((p) => p.topics.includes(topic)))
+    .map((p, i) => ({ p, score: p.saves / 5 + (posts.length - i) / 6 }))
     .sort((a, b) => b.score - a.score)
     .map((x) => x.p)
 

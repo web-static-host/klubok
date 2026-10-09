@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, BadgeCheck, Bookmark, ChefHat, CircleCheck, Heart, Link2, SearchX, ThumbsDown, ThumbsUp, Trash2 } from 'lucide-react'
-import type { AiMeta, Try } from '../data/types'
+import { ArrowLeft, BadgeCheck, Bookmark, ChefHat, CircleCheck, Link2, SearchX, ThumbsDown, ThumbsUp, Trash2 } from 'lucide-react'
+import type { AiMeta, Post, Try } from '../data/types'
 import { topicLabel } from '../data/types'
 import { Rejected, useStore } from '../store'
 import { useUi } from '../ui-context'
@@ -18,7 +18,7 @@ export function PostPage() {
   const { id = '' } = useParams()
   const [params] = useSearchParams()
   const nav = useNavigate()
-  const { post, user, triesOf, toggleFollow, follows, likes, toggleLike, savedIn, posts, me, deletePost } = useStore()
+  const { post, user, triesOf, toggleFollow, follows, savedIn, posts, me, deletePost } = useStore()
   const { openSave, openTried, toast } = useUi()
   const [allTries, setAllTries] = useState(false)
   const [askDelete, setAskDelete] = useState(false)
@@ -26,6 +26,7 @@ export function PostPage() {
   const [deleteErr, setDeleteErr] = useState('')
   // ТЕСТ: показать, что увидел ИИ; убрать после тестов
   const [showAi, setShowAi] = useState(false)
+  const [showStats, setShowStats] = useState(false)
   const triesRef = useRef<HTMLElement>(null)
   const p = post(id)
 
@@ -43,10 +44,15 @@ export function PostPage() {
   const ok = tries.filter((t) => t.ok).length
   const pct = tries.length ? Math.round((ok / tries.length) * 100) : 0
   const photos = tries.filter((t) => t.img)
-  const liked = likes.includes(p.id)
   const saved = savedIn(p.id)
   const isMine = p.authorId === me.id
-  const more = posts.filter((x) => x.id !== p.id && x.topic === p.topic).slice(0, 12)
+  // похожие: есть общая категория, сначала — у кого общих больше
+  const more = posts
+    .filter((x) => x.id !== p.id && x.topics.some((t) => p.topics.includes(t)))
+    .map((x) => ({ x, n: x.topics.filter((t) => p.topics.includes(t)).length }))
+    .sort((a, b) => b.n - a.n)
+    .map(({ x }) => x)
+    .slice(0, 12)
   const shown = allTries || params.get('tab') === 'tries' ? tries : tries.slice(0, FIRST_TRIES)
 
   const share = async () => {
@@ -75,10 +81,18 @@ export function PostPage() {
     }
   }
 
-  const likeButton = (cls: string) => (
-    <button type="button" onClick={() => toggleLike(p.id)} aria-pressed={liked} aria-label="Нравится" className={cls}>
-      <Heart size={20} className={cx(liked && 'fill-rose-500 text-rose-500')} />
-      <span className="max-md:sr-only">{num(p.likes)}</span>
+  // «в избранное»: открывает выбор папки; рядом — сколько человек уже добавили
+  const saveButton = (cls: string) => (
+    <button
+      type="button"
+      onClick={() => openSave(p.id)}
+      aria-pressed={saved.length > 0}
+      aria-label={`${saved.length ? 'Сохранено' : 'Сохранить'}. В избранном у ${p.saves}`}
+      title={`В избранном у ${p.saves} ${plural(p.saves, 'человека', 'человек', 'человек')}`}
+      className={cls}
+    >
+      <Bookmark size={20} strokeWidth={2.2} fill={saved.length ? 'currentColor' : 'none'} />
+      <span>{num(p.saves)}</span>
     </button>
   )
 
@@ -90,12 +104,6 @@ export function PostPage() {
           <div className="flex-1" />
           {isMine && <IconButton icon={Trash2} label="Удалить идею" onClick={() => setAskDelete(true)} />}
           <IconButton icon={Link2} label="Поделиться" onClick={share} />
-          <IconButton
-            icon={Bookmark}
-            label={saved.length ? 'Сохранено' : 'Сохранить'}
-            active={saved.length > 0}
-            onClick={() => openSave(p.id)}
-          />
         </div>
 
         <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:gap-8">
@@ -112,12 +120,15 @@ export function PostPage() {
               >
                 <BadgeCheck size={14} className="text-accent" strokeWidth={2.4} /> Оригинал
               </span>
-              <Link
-                to={`/search?q=${encodeURIComponent(topicLabel(p.topic))}`}
-                className="press rounded-full border border-line bg-surface px-2.5 py-1 text-xs font-semibold hover:bg-active"
-              >
-                {topicLabel(p.topic)}
-              </Link>
+              {p.topics.map((t) => (
+                <Link
+                  key={t}
+                  to={`/search?q=${encodeURIComponent(topicLabel(t))}`}
+                  className="press rounded-full border border-line bg-surface px-2.5 py-1 text-xs font-semibold hover:bg-active"
+                >
+                  {topicLabel(t)}
+                </Link>
+              ))}
               {/* ТЕСТ: кнопка «Теги ИИ» — убрать после тестов */}
               <button
                 type="button"
@@ -127,7 +138,17 @@ export function PostPage() {
               >
                 Теги ИИ (тест)
               </button>
+              {/* ТЕСТ: кнопка «Статистика» — в финале это увидит только автор, в своей статистике */}
+              <button
+                type="button"
+                onClick={() => setShowStats((v) => !v)}
+                aria-expanded={showStats}
+                className="press rounded-full border border-dashed border-line-strong px-2.5 py-1 text-xs font-semibold hover:bg-active"
+              >
+                Статистика (тест)
+              </button>
             </div>
+            {showStats && <StatsView p={p} ok={ok} fail={tries.length - ok} />}
             {showAi && (
               <div className="card mb-3 p-3 text-xs leading-relaxed">
                 <p className="font-semibold">{p.ai?.checked ? 'Проверено ИИ' : 'ИИ не проверял (тестовый пост или ИИ был недоступен)'}</p>
@@ -177,7 +198,7 @@ export function PostPage() {
                   Я попробовал
                 </Button>
               )}
-              {likeButton('press card inline-flex h-12 items-center gap-2 px-4 text-sm font-semibold hover:bg-active')}
+              {saveButton('press card inline-flex h-12 items-center gap-2 px-4 text-sm font-semibold hover:bg-active')}
             </div>
             {saved.length > 0 && (
               <p className="mt-3 text-xs">
@@ -262,7 +283,9 @@ export function PostPage() {
             Я попробовал
           </Button>
         )}
-        {likeButton('press glass-strong inline-flex h-12 w-12 items-center justify-center rounded-2xl shadow-lg')}
+        {saveButton(
+          'press glass-strong inline-flex h-12 min-w-12 items-center justify-center gap-1.5 rounded-2xl px-3 text-sm font-semibold shadow-lg',
+        )}
       </div>
       <div className="h-16 md:hidden" aria-hidden />
 
@@ -471,5 +494,31 @@ function AiMetaView({ m }: { m: AiMeta }) {
         )
       })}
     </dl>
+  )
+}
+
+// ТЕСТ: сырая статистика поста — убрать вместе с кнопкой «Статистика (тест)»
+function StatsView({ p, ok, fail }: { p: Post; ok: number; fail: number }) {
+  const views = p.stats?.views ?? 0
+  const clicks = p.stats?.clicks ?? 0
+  const rows: [string, string][] = [
+    ['Показы в ленте', num(views)],
+    ['Клики (открыли из ленты)', num(clicks)],
+    ['Доля кликов', views ? `${Math.round((clicks / views) * 1000) / 10}%` : '—'],
+    ['В избранном', num(p.saves)],
+    ['Получилось / не получилось', `${ok} / ${fail}`],
+  ]
+  return (
+    <div className="card mb-3 p-3 text-xs leading-relaxed">
+      <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">
+        {rows.map(([k, v]) => (
+          <div key={k} className="contents">
+            <dt className="text-muted">{k}</dt>
+            <dd className="text-right font-semibold">{v}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-2 text-muted">Свои показы и клики не считаются. Одна вкладка — один показ и один клик на пост.</p>
+    </div>
   )
 }

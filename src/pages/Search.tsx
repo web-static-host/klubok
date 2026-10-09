@@ -16,7 +16,7 @@ export function Search() {
 
   const found = q
     ? posts.filter((p) =>
-        [p.title, topicLabel(p.topic), ...p.tags, p.ai?.text ?? '', user(p.authorId).name].join(' ').toLowerCase().includes(q),
+        [p.title, ...p.topics.map(topicLabel), ...p.tags, p.ai?.text ?? '', user(p.authorId).name].join(' ').toLowerCase().includes(q),
       )
     : []
   const people = q ? users.filter((u) => u.id !== me.id && (u.name + ' ' + u.handle).toLowerCase().includes(q)) : []

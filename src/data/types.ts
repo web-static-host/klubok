@@ -29,13 +29,17 @@ export interface User {
 export interface Post {
   id: string
   type: PostType
-  topic: Topic
+  /** 1–5 категорий, первая — главная */
+  topics: Topic[]
   title: string
   authorId: string
   createdAt: number
   /** 1–10 картинок, листаются */
   images: Img[]
-  likes: number
+  /** сколько человек сохранили в свои папки */
+  saves: number
+  /** ТЕСТ: показы в ленте и клики — статистика для автора; сейчас видна кнопкой «Статистика (тест)» */
+  stats?: { views: number; clicks: number }
   /** скрытые слова для поиска (свои и от ИИ); на сайте не показываются */
   tags: string[]
   /** ТЕСТ: что увидел ИИ — показывается кнопкой «Теги ИИ» на странице поста; убрать после тестов */

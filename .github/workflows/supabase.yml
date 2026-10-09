@@ -1,0 +1,41 @@
+# Supabase без ручной работы: при изменениях в main сначала запускаются новые обновления базы
+# (supabase/migrations/NNN_*.sql, каждое один раз), потом выкладывается функция publish.
+# Нужен секрет SUPABASE_ACCESS_TOKEN (GitHub → Settings → Secrets and variables → Actions). Нет секрета — шаги пропускаются.
+name: Обновление Supabase
+
+on:
+  push:
+    branches: [main]
+    paths: ['supabase/functions/**', 'supabase/migrations/**', '.github/scripts/migrate.mjs']
+  workflow_dispatch:
+
+concurrency:
+  group: supabase
+  cancel-in-progress: false
+
+jobs:
+  supabase:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Нет ключа
+        if: env.SUPABASE_ACCESS_TOKEN == ''
+        run: echo "Секрет SUPABASE_ACCESS_TOKEN не задан — обновления базы и функцию нужно выкладывать вручную"
+      - uses: actions/setup-node@v4
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        with:
+          node-version: 22
+      # база — первой: новая функция может писать в новые поля
+      - name: Обновления базы
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        run: node .github/scripts/migrate.mjs
+      - uses: supabase/setup-cli@v1
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        with:
+          version: latest
+      # --no-verify-jwt: функция сама проверяет вход (проверка ника при регистрации работает без входа)
+      - name: Выложить функцию publish
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        run: supabase functions deploy publish --project-ref exjpqpmfdumjqzgehtpg --use-api --no-verify-jwt

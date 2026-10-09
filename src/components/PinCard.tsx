@@ -1,14 +1,16 @@
+import { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { Bookmark, Check, CircleCheck, CircleX, Images } from 'lucide-react'
 import type { Post } from '../data/types'
 import { useStore } from '../store'
 import { useUi } from '../ui-context'
 import { cx, num } from '../lib'
+import { trackClick, trackView } from '../track'
 import { Avatar, Picture, TopicBadge } from './ui'
 
 /** Карточка ленты — DESIGN_WEB 3.3 */
 export function PinCard({ post, folderId }: { post: Post; folderId?: string }) {
-  const { user, triesOf, savedIn, folders, toggleDone } = useStore()
+  const { user, triesOf, savedIn, folders, toggleDone, me } = useStore()
   const { openSave } = useUi()
   const author = user(post.authorId)
   const tries = triesOf(post.id)
@@ -18,10 +20,29 @@ export function PinCard({ post, folderId }: { post: Post; folderId?: string }) {
   const folder = folderId ? folders.find((f) => f.id === folderId) : undefined
   const done = folder?.done.includes(post.id)
 
+  // статистика автора: карточку увидели (видна хотя бы наполовину) и открыли. Свои не считаем.
+  const mine = post.authorId === me.id
+  const box = useRef<HTMLElement>(null)
+  useEffect(() => {
+    const el = box.current
+    if (!el || mine || typeof IntersectionObserver === 'undefined') return
+    const io = new IntersectionObserver(
+      ([e]) => {
+        if (!e.isIntersecting) return
+        trackView(post.id)
+        io.disconnect()
+      },
+      { threshold: 0.5 },
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  }, [post.id, mine])
+  const open = () => !mine && trackClick(post.id)
+
   return (
-    <article className="group fade-up min-w-0">
+    <article ref={box} className="group fade-up min-w-0">
       <div className="relative">
-        <Link to={`/p/${post.id}`} className="block rounded-2xl" aria-label={post.title}>
+        <Link to={`/p/${post.id}`} onClick={open} className="block rounded-2xl" aria-label={post.title}>
           {post.type === 'beforeafter' && post.images[1] ? (
             <div className="grid grid-cols-2 gap-0.5 overflow-hidden rounded-2xl" style={{ aspectRatio: `1 / ${post.images[0].ratio}` }}>
               {post.images.slice(0, 2).map((im, i) => (
@@ -46,7 +67,12 @@ export function PinCard({ post, folderId }: { post: Post; folderId?: string }) {
           )}
           <span className="pointer-events-none absolute inset-0 rounded-2xl bg-black/0 transition-colors duration-200 group-hover:bg-black/15" />
         </Link>
-        <TopicBadge topic={post.topic} className="pointer-events-none absolute top-2 left-2 max-w-[calc(100%-56px)]" />
+        {/* категории — только при наведении (на картинке плашки нет) */}
+        <div className="pointer-events-none absolute top-2 left-2 flex max-w-[calc(100%-56px)] flex-wrap gap-1 opacity-0 transition-opacity duration-200 group-focus-within:opacity-100 group-hover:opacity-100 max-md:hidden">
+          {post.topics.map((t) => (
+            <TopicBadge key={t} topic={t} />
+          ))}
+        </div>
         {folder ? (
           <button
             type="button"
@@ -80,7 +106,7 @@ export function PinCard({ post, folderId }: { post: Post; folderId?: string }) {
         )}
       </div>
       <div className="px-1 pt-2">
-        <Link to={`/p/${post.id}`} className="line-clamp-2 text-sm leading-5 font-semibold hover:underline">
+        <Link to={`/p/${post.id}`} onClick={open} className="line-clamp-2 text-sm leading-5 font-semibold hover:underline">
           {post.title}
         </Link>
         <div className="mt-1.5 flex items-center gap-1.5">
@@ -101,6 +127,12 @@ export function PinCard({ post, folderId }: { post: Post; folderId?: string }) {
             >
               <CircleX size={13} strokeWidth={2.4} />
               {num(failCount)}
+            </span>
+          )}
+          {post.saves > 0 && (
+            <span className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold" title="Добавили в избранное">
+              <Bookmark size={13} strokeWidth={2.4} />
+              {num(post.saves)}
             </span>
           )}
         </div>

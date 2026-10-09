@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Camera, Loader2, ChevronRight, ImageOff, LogOut, Monitor, Moon, Pencil, Sun } from 'lucide-react'
+import { ArrowLeft, Camera, Loader2, ChevronRight, ImageOff, LogOut, Monitor, Moon, Pencil, Settings, Sun } from 'lucide-react'
 import { useStore, type ThemeMode } from '../store'
 import { num, plural } from '../lib'
 import type { Img } from '../data/types'
@@ -11,7 +11,7 @@ import { LoginForm } from '../components/LoginSheet'
 import { AvatarCropper } from '../components/AvatarCropper'
 import { useCheckedImages } from '../components/useCheckedImages'
 import { FolderCard, NewFolderButton } from './Folders'
-import { Bone, FoldersSkeleton, MasonrySkeleton, ProfileHeadSkeleton } from '../components/Skeleton'
+import { FoldersSkeleton, MasonrySkeleton, ProfileHeadSkeleton } from '../components/Skeleton'
 
 type Tab = 'posts' | 'folders' | 'tried'
 
@@ -22,18 +22,14 @@ export function Profile({ self }: { self?: boolean }) {
   const u = self ? s.me : s.user(id)
   const mine = s.authed && u.id === s.me.id
   const [tab, setTab] = useState<Tab>('posts')
-  const [editing, setEditing] = useState(false)
+  // окно профиля: 'profile' — только данные профиля (компьютер), 'all' — профиль и настройки (телефон, шестерёнка)
+  const [editing, setEditing] = useState<false | 'profile' | 'all'>(false)
 
   // ещё не знаем, вошёл ли человек, или нет данных — заглушка в разметке профиля (а не форма входа и не «никого»)
   if ((self && !s.authReady) || !s.loaded)
     return (
       <div className="px-2 pt-3 sm:px-3 md:px-4 md:pt-8 lg:px-6">
-        {!self && (
-          <div className="mb-2 px-1">
-            <Bone className="h-10 w-10 rounded-2xl" />
-          </div>
-        )}
-        <ProfileHeadSkeleton self={self} />
+        <ProfileHeadSkeleton self={self} back={!self} />
         <div className="mt-5">
           <MasonrySkeleton rows={2} />
         </div>
@@ -54,6 +50,7 @@ export function Profile({ self }: { self?: boolean }) {
   const triedPosts = triedIds.map((pid) => s.post(pid)).filter((p) => !!p)
   const repeated = s.tries.filter((t) => posts.some((p) => p.id === t.postId)).length
   const followers = u.followers
+  const back = () => (window.history.length > 1 ? nav(-1) : nav('/'))
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'posts', label: 'Публикации' },
@@ -63,72 +60,71 @@ export function Profile({ self }: { self?: boolean }) {
 
   return (
     <div className="px-2 pt-3 sm:px-3 md:px-4 md:pt-8 lg:px-6">
-      {!self && (
-        <div className="mb-2 px-1">
-          <IconButton icon={ArrowLeft} label="Назад" onClick={() => (window.history.length > 1 ? nav(-1) : nav('/'))} />
-        </div>
-      )}
       {/* шапка — в ширину: карточка автора (с кнопкой «Изменить профиль» / «Подписаться»), цифры; у себя ниже — настройки. На телефоне — столбиком */}
-      <section className="fade-up flex flex-col gap-2 md:flex-row md:flex-wrap md:justify-center">
-        <div className="card flex min-w-0 items-center gap-3 p-3 md:max-w-[560px]">
-          <Avatar user={u} size={56} />
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-xl leading-7 font-bold">{u.name}</h1>
-            <p className="truncate text-sm">@{u.handle}</p>
-            {u.bio && <p className="mt-1 line-clamp-2 text-sm leading-snug">{u.bio}</p>}
+      <div className="relative">
+        {/* «Назад» — не отдельной строкой: на широком экране слева от шапки, на узком — в карточке автора */}
+        {!self && <IconButton icon={ArrowLeft} label="Назад" className="absolute top-0 left-0 max-lg:hidden" onClick={back} />}
+        <section className="fade-up flex flex-col gap-2 md:flex-row md:flex-wrap md:justify-center">
+          <div className="card flex min-w-0 items-center gap-3 p-3 md:max-w-[560px]">
+            {!self && <IconButton icon={ArrowLeft} label="Назад" className="lg:hidden" onClick={back} />}
+            <Avatar user={u} size={56} />
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate text-xl leading-7 font-bold">{u.name}</h1>
+              <p className="truncate text-sm">@{u.handle}</p>
+              {u.bio && <p className="mt-1 line-clamp-2 text-sm leading-snug">{u.bio}</p>}
+            </div>
+            {mine ? (
+              <>
+                {/* компьютер: «Изменить профиль», под ней «Выйти» */}
+                <div className="ml-1 flex shrink-0 flex-col gap-1.5 max-md:hidden">
+                  <Button kind="neutral" size="sm" icon={Pencil} onClick={() => setEditing('profile')}>
+                    Изменить профиль
+                  </Button>
+                  <Button kind="neutral" size="sm" icon={LogOut} onClick={() => s.signOut()}>
+                    Выйти
+                  </Button>
+                </div>
+                {/* телефон: шестерёнка — профиль, тема, правила и выход в одном окне */}
+                <IconButton icon={Settings} label="Профиль и настройки" className="ml-1 md:hidden" onClick={() => setEditing('all')} />
+              </>
+            ) : (
+              <Button
+                kind={s.follows.includes(u.id) ? 'neutral' : 'primary'}
+                size="sm"
+                className="ml-1 shrink-0 max-md:hidden"
+                onClick={() => s.toggleFollow(u.id)}
+              >
+                {s.follows.includes(u.id) ? 'Вы подписаны' : 'Подписаться'}
+              </Button>
+            )}
           </div>
-          {mine ? (
-            <Button
-              kind="neutral"
-              size="sm"
-              icon={Pencil}
-              className="ml-1 shrink-0"
-              aria-label="Изменить профиль"
-              onClick={() => setEditing(true)}
-            >
-              <span className="max-sm:hidden">Изменить профиль</span>
-            </Button>
-          ) : (
-            <Button
-              kind={s.follows.includes(u.id) ? 'neutral' : 'primary'}
-              size="sm"
-              className="ml-1 shrink-0"
-              onClick={() => s.toggleFollow(u.id)}
-            >
+          {/* телефон: «Подписаться» — под карточкой во всю ширину, чтобы не обрезать имя */}
+          {!mine && (
+            <Button kind={s.follows.includes(u.id) ? 'neutral' : 'primary'} className="md:hidden" onClick={() => s.toggleFollow(u.id)}>
               {s.follows.includes(u.id) ? 'Вы подписаны' : 'Подписаться'}
             </Button>
           )}
-        </div>
-        <dl className="grid grid-cols-3 gap-2 md:flex">
-          {[
-            { v: posts.length, l: plural(posts.length, 'публикация', 'публикации', 'публикаций') },
-            { v: followers, l: plural(followers, 'подписчик', 'подписчика', 'подписчиков') },
-            { v: repeated, l: 'раз повторили' },
-          ].map((x) => (
-            <div key={x.l} className="card flex flex-col justify-center px-3 py-2 text-center md:min-w-[120px]">
-              <dd className="text-lg leading-6 font-bold">{num(x.v)}</dd>
-              <dt className="text-xs">{x.l}</dt>
-            </div>
-          ))}
-        </dl>
-      </section>
-      {mine && (
-        <section className="mt-2 grid grid-cols-2 gap-2 md:flex md:justify-center" aria-label="Настройки">
-          <div className="col-span-2 md:col-span-1">
-            <ThemeSettings />
-          </div>
-          <Link to="/rules" className="card flex min-h-12 items-center justify-between gap-4 px-4 text-sm font-semibold hover:bg-active">
-            Правила Клубка <ChevronRight size={18} />
-          </Link>
-          <div className="card flex min-h-12 items-center justify-center gap-3 p-1.5 sm:justify-start sm:pl-4">
-            {/* на телефоне почта не помещается — только «Выйти» */}
-            <p className="hidden min-w-0 flex-1 truncate text-sm sm:block md:max-w-[260px]">{s.email}</p>
-            <Button kind="neutral" size="sm" icon={LogOut} onClick={() => s.signOut()}>
-              Выйти
-            </Button>
-          </div>
+          <dl className="grid grid-cols-3 gap-2 md:flex">
+            {[
+              { v: posts.length, l: plural(posts.length, 'публикация', 'публикации', 'публикаций') },
+              { v: followers, l: plural(followers, 'подписчик', 'подписчика', 'подписчиков') },
+              { v: repeated, l: 'раз повторили' },
+            ].map((x) => (
+              <div key={x.l} className="card flex flex-col justify-center px-3 py-2 text-center md:min-w-[120px]">
+                <dd className="text-lg leading-6 font-bold">{num(x.v)}</dd>
+                <dt className="text-xs">{x.l}</dt>
+              </div>
+            ))}
+          </dl>
         </section>
-      )}
+        {/* у себя на компьютере — тема и правила сразу под шапкой (на телефоне — в окне за шестерёнкой) */}
+        {mine && (
+          <section className="mt-2 flex justify-center gap-2 max-md:hidden" aria-label="Настройки">
+            <ThemeSettings />
+            <RulesLink />
+          </section>
+        )}
+      </div>
       <div className="mx-auto mt-4 w-full max-w-sm">
         <Segmented value={tab} onChange={setTab} options={tabs} />
       </div>
@@ -166,7 +162,7 @@ export function Profile({ self }: { self?: boolean }) {
         )}
       </div>
 
-      {mine && editing && <EditProfile onClose={() => setEditing(false)} />}
+      {mine && editing && <EditProfile withSettings={editing === 'all'} onClose={() => setEditing(false)} />}
     </div>
   )
 }
@@ -190,10 +186,19 @@ function ThemeSettings({ label }: { label?: boolean }) {
   )
 }
 
+function RulesLink() {
+  return (
+    <Link to="/rules" className="card flex min-h-12 items-center justify-between gap-4 px-4 text-sm font-semibold hover:bg-active">
+      Правила Клубка <ChevronRight size={18} />
+    </Link>
+  )
+}
+
 const field = 'card w-full px-4 py-3 text-base outline-none placeholder:text-muted'
 
-function EditProfile({ onClose }: { onClose: () => void }) {
-  const { me, updateProfile } = useStore()
+/** withSettings — с телефона (шестерёнка): ниже профиля ещё тема, правила и «Выйти» */
+function EditProfile({ onClose, withSettings }: { onClose: () => void; withSettings?: boolean }) {
+  const { me, updateProfile, signOut } = useStore()
   const [name, setName] = useState(me.name)
   const [handle, setHandle] = useState(me.handle)
   const [bio, setBio] = useState(me.bio)
@@ -207,7 +212,7 @@ function EditProfile({ onClose }: { onClose: () => void }) {
   const [cropFile, setCropFile] = useState<File | null>(null)
   const shown = avatar === undefined ? me : { ...me, avatar: avatar?.src }
   return (
-    <Sheet open onClose={onClose} title="Профиль">
+    <Sheet open onClose={onClose} title={withSettings ? 'Профиль и настройки' : 'Профиль'}>
       <form
         className="flex flex-col gap-3"
         onSubmit={async (e) => {
@@ -310,6 +315,15 @@ function EditProfile({ onClose }: { onClose: () => void }) {
           {busy ? 'Сохраняем…' : pic.pending ? 'Проверяем фото…' : 'Сохранить'}
         </Button>
       </form>
+      {withSettings && (
+        <div className="mt-2 flex flex-col gap-3">
+          <ThemeSettings label />
+          <RulesLink />
+          <Button kind="neutral" icon={LogOut} onClick={() => signOut()}>
+            Выйти
+          </Button>
+        </div>
+      )}
       <AvatarCropper
         file={cropFile}
         onCancel={() => setCropFile(null)}

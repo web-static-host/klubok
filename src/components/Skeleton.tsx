@@ -116,13 +116,14 @@ export function ChipsSkeleton() {
   )
 }
 
-/** Шапка профиля — та же разметка, что в Profile: аватар, имя, ник, строка «о себе», три счётчика, кнопка, вкладки */
-/** Шапка профиля — та же разметка, что в Profile: карточка автора, цифры, кнопка; у себя — ряд настроек; вкладки */
-export function ProfileHeadSkeleton({ self }: { self?: boolean }) {
+/** Шапка профиля — та же разметка, что в Profile: карточка автора (с кнопками), цифры; у себя на компьютере — тема и правила; вкладки */
+export function ProfileHeadSkeleton({ self, back }: { self?: boolean; back?: boolean }) {
   return (
-    <div role="status" aria-label="Загрузка">
+    <div className="relative" role="status" aria-label="Загрузка">
+      {back && <Bone className="absolute top-0 left-0 h-10 w-10 rounded-2xl max-lg:hidden" />}
       <section className="flex flex-col gap-2 md:flex-row md:flex-wrap md:justify-center">
         <div className="card flex min-w-0 items-center gap-3 p-3 md:max-w-[560px]">
+          {back && <Bone className="h-10 w-10 shrink-0 rounded-2xl lg:hidden" />}
           <Bone className="h-14 w-14 shrink-0 rounded-full" />
           <div className="min-w-0 flex-1">
             <h1 className="text-xl leading-7 font-bold">
@@ -132,8 +133,10 @@ export function ProfileHeadSkeleton({ self }: { self?: boolean }) {
               <Line w="7em" />
             </p>
           </div>
-          <Bone className="h-9 w-9 shrink-0 rounded-2xl sm:w-[190px]" />
+          {/* у себя: на компьютере «Изменить профиль» и «Выйти» столбиком, на телефоне — шестерёнка; у чужого — «Подписаться» */}
+          <Bone className={cx('ml-1 shrink-0 rounded-2xl', self ? 'h-10 w-10 md:h-[78px] md:w-[188px]' : 'h-9 w-[120px] max-md:hidden')} />
         </div>
+        {!self && <Bone className="min-h-12 rounded-2xl md:hidden" />}
         <div className="grid grid-cols-3 gap-2 md:flex">
           {[0, 1, 2].map((i) => (
             <div key={i} className="card flex flex-col justify-center px-3 py-2 text-center md:min-w-[120px]">
@@ -148,17 +151,9 @@ export function ProfileHeadSkeleton({ self }: { self?: boolean }) {
         </div>
       </section>
       {self && (
-        <div className="mt-2 grid grid-cols-2 gap-2 md:flex md:justify-center">
-          {[0, 1, 2].map((i) => (
-            <Bone
-              key={i}
-              className={
-                i
-                  ? cx('h-[50px] rounded-2xl md:h-[52px]', i === 1 ? 'md:w-[178px]' : 'md:w-[320px]')
-                  : 'col-span-2 h-[52px] rounded-2xl md:col-span-1 md:w-[380px]'
-              }
-            />
-          ))}
+        <div className="mt-2 flex justify-center gap-2 max-md:hidden">
+          <Bone className="h-[52px] w-[380px] rounded-2xl" />
+          <Bone className="h-[52px] w-[178px] rounded-2xl" />
         </div>
       )}
       <div className="mx-auto mt-4 w-full max-w-sm">

@@ -7,11 +7,11 @@ import { useUi } from '../ui-context'
 import { cx, fileToImg } from '../lib'
 import { Sheet } from './Sheet'
 import { RulesLink } from './RulesSheet'
-import { useCheckedImages } from './useCheckedImages'
+import { useCheckedImages, type CheckedImg } from './useCheckedImages'
 import { Button } from './ui'
 import { TopicPicker } from './TopicPicker'
 
-const field = 'card w-full px-4 py-3 text-base outline-none placeholder:text-muted'
+const field = 'card w-full px-4 py-3 text-base outline-none placeholder:text-muted disabled:opacity-60'
 const MAX = 10
 /** категорий у идеи — до 5 */
 const MAX_TOPICS = 5
@@ -101,6 +101,12 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
   // название, которое ИИ предложил по картинкам (по первой, где оно есть); показываем, пока человек не начал писать своё
   const aiTitle = images.find((i) => i.title)?.title ?? ''
   const shownTitle = titleTouched ? title : aiTitle
+  // название и категории подбираются по картинке — до её проверки их не трогаем (иначе подбор и правка спорят)
+  const locked = !images.length
+    ? 'Сначала загрузите картинку'
+    : images.some((i) => i.status !== 'checking')
+      ? ''
+      : 'Проверяем картинку — подберём сами…'
 
   const publish = async () => {
     setWaiting(false)
@@ -334,8 +340,12 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
               setTitleTouched(true)
             }}
             maxLength={80}
+            disabled={!!locked}
             placeholder={
-              pics.pending && !titleTouched ? 'Подберём название по картинке — или напишите своё' : 'Название, например «Сырники без муки»'
+              locked ||
+              (pics.pending && !titleTouched
+                ? 'Подберём название по картинке — или напишите своё'
+                : 'Название, например «Сырники без муки»')
             }
             aria-label="Название"
             className={field}
@@ -355,6 +365,7 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
             }}
             auto={!topicsTouched}
             max={MAX_TOPICS}
+            locked={locked}
           />
 
           {images.length >= 2 && (
@@ -386,8 +397,45 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
               Картинки проверяются. Название и категории подберутся по ним сами — их можно поменять.
             </p>
           )}
+          {/* ТЕСТ: замеры проверки выбранной картинки — убрать после тестов */}
+          {cur?.times && <CheckTimes n={sel + 1} t={cur.times} />}
         </div>
       </form>
     </Sheet>
+  )
+}
+
+// ТЕСТ: сколько заняла проверка картинки и на что ушло время — убрать после тестов
+const sec = (ms?: number) => (ms === undefined ? '—' : `${(ms / 1000).toFixed(1).replace('.', ',')} с`)
+function CheckTimes({ n, t }: { n: number; t: NonNullable<CheckedImg['times']> }) {
+  const s = t.server ?? {}
+  const rows: [string, string, boolean?][] = s.cached
+    ? [
+        ['Загрузка картинки на сервер', sec(t.upload)],
+        ['Проверка (взята из прошлой, ИИ не спрашивали)', sec(t.request)],
+      ]
+    : [
+        ['Загрузка картинки на сервер', sec(t.upload)],
+        ...(t.wait > 100 ? ([['Ждала, пока проверятся предыдущие', sec(t.wait)]] as [string, string][]) : []),
+        ['Запрос проверки целиком', sec(t.request)],
+        ['· скачать картинку', `${sec(s.download)}${s.kb ? ` (${s.kb} КБ)` : ''}`, true],
+        ['· вход в ГигаЧат', sec(s.login), true],
+        ['· отправить картинку в ГигаЧат', sec(s.upload), true],
+        ['· ответ ГигаЧата', `${sec(s.ai)}${s.tokens_out ? ` (написал ${s.tokens_out} ток.)` : ''}`, true],
+        ['· сохранить результат', sec(s.save), true],
+        [`· дорога и запуск функции${s.cold ? ' (холодный старт)' : ''}`, sec(t.request - (s.total ?? 0)), true],
+      ]
+  return (
+    <div className="rounded-2xl border border-dashed border-line-strong p-3 text-xs leading-relaxed">
+      <p className="mb-1 font-semibold">Тест: проверка картинки {n}</p>
+      <dl className="grid grid-cols-[1fr_auto] gap-x-3">
+        {rows.map(([k, v, sub]) => (
+          <div key={k} className="contents">
+            <dt className={cx('text-muted', sub && 'pl-2')}>{k}</dt>
+            <dd className="text-right font-semibold tabular-nums">{v}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   )
 }

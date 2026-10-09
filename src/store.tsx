@@ -53,7 +53,10 @@ interface Store {
   uploadImg: (img: Img) => Promise<Img>
   /** проверить загруженную картинку по правилам; нет связи или старая функция — исключение */
   /** topics — категории, которые ИИ подобрал по картинке (до 5), title — название, которое он предлагает */
-  checkImg: (img: Img, purpose: 'post' | 'avatar') => Promise<{ ok: boolean; reasons: string[]; topics: string[]; title: string }>
+  checkImg: (
+    img: Img,
+    purpose: 'post' | 'avatar',
+  ) => Promise<{ ok: boolean; reasons: string[]; topics: string[]; title: string; timing?: Record<string, number> }>
   addTry: (postId: string, ok: boolean, text?: string, img?: Img) => Promise<void>
   /** ответ на отзыв; гостю — окно входа */
   addReply: (tryId: string, text: string) => Promise<void>
@@ -489,6 +492,7 @@ export function StoreProvider({
         reasons: data.reasons ?? [],
         topics: Array.isArray(data.topics) ? data.topics : [],
         title: typeof data.title === 'string' ? data.title : '',
+        timing: data.timing,
       }
     },
     addPost: async (data) => {

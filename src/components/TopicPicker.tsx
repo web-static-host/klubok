@@ -14,17 +14,21 @@ export function TopicPicker({
   onChange,
   auto,
   max = 5,
+  locked,
 }: {
   value: Topic[]
   onChange: (v: Topic[]) => void
   auto?: boolean
   max?: number
+  /** поле заблокировано (картинка ещё не проверена) — текст вместо подсказки */
+  locked?: string
 }) {
   const [q, setQ] = useState('')
   const [open, setOpen] = useState(false)
   const [hi, setHi] = useState(0)
   const listId = useId()
   const full = value.length >= max
+  const off = full || !!locked
 
   const query = norm(q)
   const found = TOPICS.filter((t) => !value.includes(t.id) && (!query || norm(t.label).includes(query)))
@@ -64,6 +68,7 @@ export function TopicPicker({
               {topicLabel(t)}
               <button
                 type="button"
+                disabled={!!locked}
                 aria-label={`Убрать «${topicLabel(t)}»`}
                 onClick={() => onChange(value.filter((x) => x !== t))}
                 className="press inline-flex h-6 w-6 items-center justify-center rounded-full hover:bg-active"
@@ -74,7 +79,7 @@ export function TopicPicker({
           ))}
         </div>
       ) : (
-        <p className="text-sm text-muted">Подберём сами по картинкам — или выберите ниже.</p>
+        <p className="text-sm text-muted">{locked ? 'Подберём сами по картинке.' : 'Подберём сами по картинкам — или выберите ниже.'}</p>
       )}
       {auto && value.length > 0 && (
         <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted">
@@ -86,7 +91,7 @@ export function TopicPicker({
         <Search size={18} className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-muted" />
         <input
           value={q}
-          disabled={full}
+          disabled={off}
           onChange={(e) => {
             setQ(e.target.value)
             setOpen(true)
@@ -110,15 +115,15 @@ export function TopicPicker({
             }
           }}
           role="combobox"
-          aria-expanded={open && !full}
+          aria-expanded={open && !off}
           aria-controls={listId}
           aria-autocomplete="list"
           aria-label="Найти или добавить категорию"
-          placeholder={full ? `Не больше ${max} категорий` : 'Найти или добавить категорию'}
+          placeholder={locked || (full ? `Не больше ${max} категорий` : 'Найти или добавить категорию')}
           className="card w-full py-3 pr-4 pl-11 text-base outline-none placeholder:text-muted disabled:opacity-60"
         />
       </div>
-      {open && !full && (
+      {open && !off && (
         <ul id={listId} role="listbox" className="card mt-2 max-h-64 overflow-y-auto p-1">
           {options.length ? (
             options.map((o, i) => (

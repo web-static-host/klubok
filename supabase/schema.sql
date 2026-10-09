@@ -116,6 +116,8 @@ create table image_checks (
   meta jsonb,
   ai_text text,
   by_ai boolean not null default false,
+  -- замеры проверки, мс: скачать, вход в ИИ, отправить, ответ ИИ, сохранить, всего
+  timing jsonb,
   created_at timestamptz not null default now()
 );
 -- читать и писать может только функция publish

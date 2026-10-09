@@ -261,7 +261,13 @@ interface Verdict {
 }
 
 /** Ответ модели → объект; если модель отказалась отвечать (фильтр GigaChat) — это нарушение */
-async function gcAsk(system: string, user: string, attachments: string[] = [], allowPeopleNow = false): Promise<Verdict> {
+/** Замеры проверки, мс (и сколько слов-«токенов» прочитал и написал ИИ): видны на сайте в форме и пишутся в image_checks.timing */
+export type Timing = Record<string, number>
+const ms = (t: number) => Math.round(performance.now() - t)
+let cold = true
+
+async function gcAsk(system: string, user: string, attachments: string[] = [], allowPeopleNow = false, tm?: Timing): Promise<Verdict> {
+  const t = performance.now()
   const res = await gcFetch(`${GC_API}/chat/completions`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${await gcToken()}`, 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -276,6 +282,11 @@ async function gcAsk(system: string, user: string, attachments: string[] = [], a
   })
   if (!res.ok) throw new Error(`GigaChat: ошибка запроса (${res.status}) ${(await res.text()).slice(0, 200)}`)
   const data = await res.json()
+  if (tm) {
+    tm.ai = ms(t)
+    tm.tokens_in = Number(data.usage?.prompt_tokens) || 0
+    tm.tokens_out = Number(data.usage?.completion_tokens) || 0
+  }
   const choice = data.choices?.[0]
   if (choice?.finish_reason === 'blacklist') return { ok: false, reasons: ['Содержимое нарушает правила'], meta: emptyMeta(), text: '', description: '' }
   const content: string = choice?.message?.content ?? ''
@@ -320,15 +331,24 @@ async function aiCheckText(text: string, note = ''): Promise<Verdict> {
   )
 }
 
-async function aiCheckImage(src: string, allowPeople = false): Promise<Verdict> {
+async function aiCheckImage(src: string, allowPeople = false, tm: Timing = {}): Promise<Verdict> {
+  let t = performance.now()
   const img = await fetch(src)
   if (!img.ok) throw new Error(`не удалось скачать картинку ${src}`)
+  const bytes = await img.arrayBuffer()
+  tm.download = ms(t)
+  tm.kb = Math.round(bytes.byteLength / 1024)
+  t = performance.now()
+  const auth = await gcToken()
+  tm.login = ms(t)
   const form = new FormData()
-  form.append('file', new Blob([await img.arrayBuffer()], { type: img.headers.get('content-type') ?? 'image/jpeg' }), 'image.jpg')
+  form.append('file', new Blob([bytes], { type: img.headers.get('content-type') ?? 'image/jpeg' }), 'image.jpg')
   form.append('purpose', 'general')
-  const up = await gcFetch(`${GC_API}/files`, { method: 'POST', headers: { Authorization: `Bearer ${await gcToken()}` }, body: form })
+  t = performance.now()
+  const up = await gcFetch(`${GC_API}/files`, { method: 'POST', headers: { Authorization: `Bearer ${auth}` }, body: form })
   if (!up.ok) throw new Error(`GigaChat: картинка не загрузилась (${up.status}) ${(await up.text()).slice(0, 200)}`)
   const { id } = await up.json()
+  tm.upload = ms(t)
   try {
     return await gcAsk(
       `Ты — модератор картинок. ${RULES}
@@ -358,6 +378,7 @@ ok = false ставь только при явном нарушении прав
       'Проверь картинку по правилам и опиши её.',
       [id],
       allowPeople,
+      tm,
     )
   } finally {
     gcFetch(`${GC_API}/files/${id}/delete`, { method: 'POST', headers: { Authorization: `Bearer ${await gcToken()}` } }).catch(() => {})
@@ -392,6 +413,8 @@ async function removeImages(imgs: ImgIn[]) {
 }
 
 interface ImageCheck {
+  /** результат взят из прошлой проверки (ИИ не спрашивали) */
+  cached?: boolean
   ok: boolean
   reasons: string[]
   meta: Meta
@@ -403,16 +426,18 @@ interface ImageCheck {
  * Проверка одной картинки: ИИ (правила, «нет людей», текст на ней) + явные ссылки и мат в этом тексте.
  * Результат запоминается в image_checks: картинку проверяют сразу после загрузки, и при публикации ждать не нужно.
  */
-async function checkImage(img: ImgIn, uid: string, allowPeople: boolean): Promise<ImageCheck> {
+async function checkImage(img: ImgIn, uid: string, allowPeople: boolean, tm: Timing = {}): Promise<ImageCheck> {
   const path = img.src.slice(PUBLIC_PREFIX.length)
+  let t = performance.now()
   const { data: saved } = await admin.from('image_checks').select('*').eq('path', path).maybeSingle()
+  tm.lookup = ms(t)
   // проверка «без людей» годится и для аватара; проверка аватара для поста — нет
   // старые проверки без раскладки (meta) — проверяем заново
   if (saved && saved.user_id === uid && saved.by_ai && saved.meta && (saved.strict || allowPeople))
-    return { ok: saved.ok, reasons: saved.reasons ?? [], meta: parseMeta(saved.meta), aiText: saved.ai_text ?? '', ai: true }
+    return { ok: saved.ok, reasons: saved.reasons ?? [], meta: parseMeta(saved.meta), aiText: saved.ai_text ?? '', ai: true, cached: true }
   let res: ImageCheck
   try {
-    const v = await aiCheckImage(img.src, allowPeople)
+    const v = await aiCheckImage(img.src, allowPeople, tm)
     const reasons = [...(v.ok ? [] : v.reasons.length ? v.reasons : ['Картинка нарушает правила']), ...imageTextCheck(v.text)]
     res = {
       ok: reasons.length === 0,
@@ -425,7 +450,9 @@ async function checkImage(img: ImgIn, uid: string, allowPeople: boolean): Promis
     console.error('ИИ недоступен:', e instanceof Error ? e.message : e)
     return { ok: true, reasons: [], meta: emptyMeta(), aiText: '', ai: false }
   }
+  t = performance.now()
   await admin.from('image_checks').upsert({
+    timing: tm,
     path,
     user_id: uid,
     strict: !allowPeople,
@@ -436,6 +463,7 @@ async function checkImage(img: ImgIn, uid: string, allowPeople: boolean): Promis
     ai_text: res.aiText || null,
     by_ai: true,
   })
+  tm.save = ms(t)
   return res
 }
 
@@ -539,9 +567,20 @@ export async function handle(req: Request): Promise<Response> {
     case 'check-image': {
       const img = body.img as ImgIn | undefined
       if (!ownImage(img, uid)) return json({ ok: false, reasons: ['Неверная картинка'] }, 400)
-      const c = await checkImage(img, uid, body.purpose === 'avatar')
-      // topics — категории, которые ИИ предлагает по этой картинке (форма ставит их сама)
-      return json(c.ok ? { ok: true, ai: c.ai, topics: c.meta.topics, title: c.meta.title } : { ok: false, reasons: c.reasons })
+      const tm: Timing = {}
+      // первый запрос после простоя: функция только что запустилась («холодный старт»)
+      if (cold) tm.cold = 1
+      cold = false
+      const t = performance.now()
+      const c = await checkImage(img, uid, body.purpose === 'avatar', tm)
+      tm.total = ms(t)
+      if (c.cached) tm.cached = 1
+      // topics и title — категории и название, которые ИИ предлагает по этой картинке (форма ставит их сама); timing — замеры (ТЕСТ)
+      return json(
+        c.ok
+          ? { ok: true, ai: c.ai, topics: c.meta.topics, title: c.meta.title, timing: tm }
+          : { ok: false, reasons: c.reasons, timing: tm },
+      )
     }
 
     case 'post': {

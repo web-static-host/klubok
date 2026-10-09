@@ -195,6 +195,23 @@ function loadCache(): PublicRows | null {
     return null
   }
 }
+/** Свои скрытые идеи — запоминаем для этого человека, чтобы при следующем заходе показать сразу */
+const HIDDEN = 'klubok.hidden.v1'
+function loadHidden(uid: string): PostRow[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(HIDDEN) ?? 'null')
+    return v?.uid === uid && Array.isArray(v.rows) ? (v.rows as PostRow[]) : []
+  } catch {
+    return []
+  }
+}
+function saveHidden(uid: string, rows: PostRow[]) {
+  try {
+    localStorage.setItem(HIDDEN, JSON.stringify({ uid, rows }))
+  } catch {
+    /* места нет — не страшно */
+  }
+}
 function saveCache(rows: PublicRows) {
   try {
     localStorage.setItem(CACHE, JSON.stringify(rows))
@@ -288,6 +305,8 @@ export function StoreProvider({
   const [authKnown, setAuthKnown] = useState(false)
   const [users, setUsers] = useState<User[]>(() => cached?.[0].map(toUser) ?? [])
   const [posts, setPosts] = useState<Post[]>(() => cached?.[1].map(toPost) ?? [])
+  // свои скрытые идеи: в общих данных их нет (видит только автор) — отдельно, с запоминанием, чтобы показывались сразу
+  const [hiddenMine, setHiddenMine] = useState<Post[]>([])
   const [tries, setTries] = useState<Try[]>(() => cached?.[2].map(toTry) ?? [])
   const [replies, setReplies] = useState<Reply[]>(() => cached?.[3].map(toReply) ?? [])
   const [folders, setFolders] = useState<Folder[]>([])
@@ -386,17 +405,6 @@ export function StoreProvider({
         )
         setFollows((check(fo).data as { following_id: string }[]).map((x) => x.following_id))
         setMineFor(uid)
-        // свои скрытые идеи: в общей ленте их нет (видит только автор) — добавляем, чтобы автор видел их и причину
-        supabase
-          .from('posts')
-          .select('*')
-          .eq('author_id', uid)
-          .eq('hidden', true)
-          .then(({ data }) => {
-            if (!live || !data?.length) return
-            const mine = (data as PostRow[]).map(toPost)
-            setPosts((ps) => [...mine, ...ps.filter((p) => !mine.some((m) => m.id === p.id))])
-          })
       })
       .catch(() => {
         if (!live) return
@@ -408,13 +416,43 @@ export function StoreProvider({
     }
   }, [uid, mineAttempt])
 
+  // свои скрытые идеи: сразу — из запомненного в прошлый раз, следом — свежие из базы (одновременно с папками, не после них)
+  useEffect(() => {
+    if (!uid) {
+      setHiddenMine([])
+      return
+    }
+    let live = true
+    setHiddenMine(loadHidden(uid).map(toPost))
+    supabase
+      .from('posts')
+      .select('*')
+      .eq('author_id', uid)
+      .eq('hidden', true)
+      .then(({ data, error }) => {
+        if (!live || error || !data) return
+        saveHidden(uid, data as PostRow[])
+        setHiddenMine((data as PostRow[]).map(toPost))
+      })
+    return () => {
+      live = false
+    }
+  }, [uid, mineAttempt])
+
+  // все идеи для сайта: общие + свои скрытые (по дате, новые сверху)
+  const allPosts = useMemo(() => {
+    if (!hiddenMine.length) return posts
+    const ids = new Set(hiddenMine.map((p) => p.id))
+    return [...hiddenMine, ...posts.filter((p) => !ids.has(p.id))].sort((a, b) => b.createdAt - a.createdAt)
+  }, [posts, hiddenMine])
+
   // живые обновления (Supabase Realtime, через проброс): что пришло — сразу на экран, без перезагрузки страницы
   const usersRef = useRef(users)
-  const postsRef = useRef(posts)
+  const postsRef = useRef(allPosts)
   useEffect(() => {
     usersRef.current = users
-    postsRef.current = posts
-  }, [users, posts])
+    postsRef.current = allPosts
+  }, [users, allPosts])
   // автор нового отзыва или ответа мог зарегистрироваться после загрузки страницы — подгружаем его профиль
   const needUser = useCallback((id: string) => {
     if (usersRef.current.some((u) => u.id === id)) return
@@ -470,6 +508,7 @@ export function StoreProvider({
             if (!data) return
             const p = toPost(data as PostRow)
             setPosts((ps) => ps.map((x) => (x.id === p.id ? p : x)))
+            setHiddenMine((hs) => (p.hidden ? [p, ...hs.filter((x) => x.id !== p.id)] : hs.filter((x) => x.id !== p.id)))
             if (p.hidden && !postsRef.current.find((x) => x.id === p.id)?.hidden) setNotice(`Идея «${p.title}» скрыта: ${p.hidden}`)
           })
       })
@@ -500,7 +539,7 @@ export function StoreProvider({
   const me: User = (uid && usersById.get(uid)) || (uid ? { ...GUEST, id: uid, name: email.split('@')[0] } : GUEST)
 
   const user = useCallback((id: string) => usersById.get(id) ?? { ...GUEST, id, name: 'Автор' }, [usersById])
-  const post = useCallback((id: string) => posts.find((p) => p.id === id), [posts])
+  const post = useCallback((id: string) => allPosts.find((p) => p.id === id), [allPosts])
   const triesOf = useCallback(
     (postId: string) => tries.filter((t) => t.postId === postId).sort((a, b) => b.createdAt - a.createdAt),
     [tries],
@@ -563,7 +602,7 @@ export function StoreProvider({
     email,
     me,
     users,
-    posts,
+    posts: allPosts,
     tries,
     replies,
     folders,
@@ -609,6 +648,7 @@ export function StoreProvider({
     deletePost: async (id) => {
       await publish({ action: 'delete-post', postId: id })
       setPosts((ps) => ps.filter((p) => p.id !== id))
+      setHiddenMine((hs) => hs.filter((p) => p.id !== id))
       setTries((ts) => ts.filter((t) => t.postId !== id))
       setFolders((fs) => fs.map((f) => ({ ...f, postIds: f.postIds.filter((x) => x !== id), done: f.done.filter((x) => x !== id) })))
     },

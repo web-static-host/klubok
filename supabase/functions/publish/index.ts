@@ -571,6 +571,142 @@ async function removeImages(imgs: ImgIn[]) {
   if (paths.length) await admin.storage.from('images').remove(paths)
 }
 
+/** Удалить идею целиком: пост, отзывы и ответы (каскадом в базе) и все картинки — свои и фото из отзывов. Вернёт текст ошибки */
+async function deletePostFully(id: string, images: ImgIn[]): Promise<string | null> {
+  const { data: tries } = await admin.from('tries').select('img').eq('post_id', id)
+  const own = (images ?? []).flatMap((i) => [i, ...(i.thumb ? [{ src: i.thumb, ratio: i.ratio }] : [])])
+  const imgs = [...own, ...(tries ?? []).map((t) => t.img as ImgIn | null)].filter(
+    (i): i is ImgIn => typeof i?.src === 'string' && i.src.startsWith(PUBLIC_PREFIX) && !i.src.startsWith(`${PUBLIC_PREFIX}demo/`),
+  )
+  const { error } = await admin.from('posts').delete().eq('id', id)
+  if (error) return error.message
+  await removeImages(imgs)
+  if (imgs.length) await admin.from('image_checks').delete().in('path', imgs.map((i) => i.src.slice(PUBLIC_PREFIX.length)))
+  return null
+}
+
+// ─── 4. Админка: действия модератора (смотрит админка — admin.html, данные — функциями базы admin_*) ───
+
+type Target = 'post' | 'try' | 'reply' | 'profile'
+const TARGETS: Target[] = ['post', 'try', 'reply', 'profile']
+
+/** Жалобы на это — рассмотрены; тем, кто жаловался, — уведомление с итогом */
+async function resolveReports(adminId: string, type: Target, id: string, status: 'accepted' | 'rejected', what: string) {
+  const { data } = await admin
+    .from('reports')
+    .update({ status, resolved_by: adminId, resolved_at: new Date().toISOString() })
+    .eq('target_type', type)
+    .eq('target_id', id)
+    .eq('status', 'open')
+    .select('reporter_id')
+  const who = [...new Set((data ?? []).map((r) => r.reporter_id as string))]
+  if (who.length)
+    await admin
+      .from('notifications')
+      .insert(who.map((user_id) => ({ user_id, kind: 'report_done', data: { status, type, what } })))
+}
+
+async function adminLog(adminId: string, action: string, type: string, id: string | null, note: string) {
+  await admin.from('admin_log').insert({ admin_id: adminId, action, target_type: type, target_id: id, note: note || null })
+}
+
+/** Сообщение автору о решении модератора (идею скрыли и вернули — сообщает сама база) */
+async function tellAuthor(userId: string, kind: string, data: Record<string, unknown>, postId?: string | null) {
+  await admin.from('notifications').insert({ user_id: userId, kind, post_id: postId ?? null, data })
+}
+
+const pathOf = (src: string) => (src.startsWith(PUBLIC_PREFIX) ? src.slice(PUBLIC_PREFIX.length) : '')
+
+/** op: hide / restore / delete / recheck / reject — идея; delete / reject — отзыв и ответ; block / unblock / clear / reject — профиль */
+export async function adminAct(adminId: string, op: string, type: Target, id: string, note: string): Promise<Response> {
+  const done = async (status: 'accepted' | 'rejected' | null, what: string, extra: Record<string, unknown> = {}) => {
+    if (status) await resolveReports(adminId, type, id, status, what)
+    await adminLog(adminId, op, type, id, note)
+    return json({ ok: true, ...extra })
+  }
+  if (op === 'reject') {
+    const { count } = await admin.from('reports').select('id', { count: 'exact', head: true }).eq('target_type', type).eq('target_id', id)
+    if (!count) return json({ ok: false, reasons: ['Жалоб на это нет'] }, 404)
+    return done('rejected', '')
+  }
+
+  if (type === 'post') {
+    const { data: p } = await admin.from('posts').select('id, author_id, title, images, ai_meta, hidden').eq('id', id).maybeSingle()
+    if (!p) return json({ ok: false, reasons: ['Идеи уже нет'] }, 404)
+    switch (op) {
+      case 'hide': {
+        const reason = note || 'Нарушает правила Клубка (решение модератора)'
+        await admin.from('posts').update({ hidden: true, hidden_reason: reason, hidden_by: 'moderator' }).eq('id', id)
+        return done('accepted', p.title)
+      }
+      case 'restore': {
+        await admin.from('posts').update({ hidden: false, hidden_reason: null, hidden_by: null }).eq('id', id)
+        // ИИ ошибся — его отказ по этим картинкам больше не действует
+        const paths = (p.images as ImgIn[]).map((i) => pathOf(i.src)).filter(Boolean)
+        if (paths.length) await admin.from('image_checks').update({ ok: true, reasons: [] }).in('path', paths)
+        return done('rejected', p.title)
+      }
+      case 'delete': {
+        const err = await deletePostFully(id, p.images as ImgIn[])
+        if (err) return json({ ok: false, reasons: ['Не получилось удалить'], detail: err }, 500)
+        await tellAuthor(p.author_id, 'removed', { what: 'post', title: p.title, reason: note || 'Нарушает правила Клубка' })
+        return done('accepted', p.title)
+      }
+      case 'recheck': {
+        await describePost(p.id, p.author_id, p.images as ImgIn[], parseMeta(p.ai_meta ?? {}), [p.title], true)
+        const { data: after } = await admin.from('posts').select('hidden, hidden_reason').eq('id', id).single()
+        return done(null, p.title, { hidden: !!after?.hidden, reason: after?.hidden_reason ?? null })
+      }
+    }
+  }
+
+  if (type === 'try' || type === 'reply') {
+    if (op !== 'delete') return json({ ok: false, reasons: ['Неизвестное действие'] }, 400)
+    const table = type === 'try' ? 'tries' : 'try_replies'
+    const { data: row } = await admin.from(table).select('*').eq('id', id).maybeSingle()
+    if (!row) return json({ ok: false, reasons: ['Уже удалено'] }, 404)
+    const postId = type === 'try' ? row.post_id : (await admin.from('tries').select('post_id').eq('id', row.try_id).maybeSingle()).data?.post_id
+    const { data: post } = postId ? await admin.from('posts').select('title').eq('id', postId).maybeSingle() : { data: null }
+    const { error } = await admin.from(table).delete().eq('id', id)
+    if (error) return json({ ok: false, reasons: ['Не получилось удалить'], detail: error.message }, 500)
+    if (type === 'try' && row.img?.src && pathOf(row.img.src) && !pathOf(row.img.src).startsWith('demo/')) await removeImages([row.img])
+    await tellAuthor(row.user_id, 'removed', { what: type, title: post?.title ?? '', reason: note || 'Нарушает правила Клубка' }, postId)
+    return done('accepted', post?.title ?? '')
+  }
+
+  if (type === 'profile') {
+    const { data: u } = await admin.from('profiles').select('id, name, handle, avatar_url, blocked').eq('id', id).maybeSingle()
+    if (!u) return json({ ok: false, reasons: ['Профиля нет'] }, 404)
+    switch (op) {
+      case 'block':
+      case 'unblock': {
+        if (u.id === adminId) return json({ ok: false, reasons: ['Себя заблокировать нельзя'] }, 400)
+        await admin.from('profiles').update({ blocked: op === 'block' }).eq('id', id)
+        await tellAuthor(id, op === 'block' ? 'blocked' : 'unblocked', { reason: note })
+        return done(op === 'block' ? 'accepted' : null, '@' + u.handle)
+      }
+      case 'clear': {
+        // имя и описание — по умолчанию, фото — убрать (ник не трогаем: по нему находят)
+        await admin.from('profiles').update({ name: u.handle, bio: '', avatar_url: null }).eq('id', id)
+        if (u.avatar_url && pathOf(u.avatar_url).startsWith(`${id}/`)) await removeImages([{ src: u.avatar_url, ratio: 1 }])
+        await tellAuthor(id, 'profile_cleared', { reason: note || 'Имя, описание или фото нарушали правила Клубка' })
+        return done('accepted', '@' + u.handle)
+      }
+    }
+  }
+  return json({ ok: false, reasons: ['Неизвестное действие'] }, 400)
+}
+
+/** id пользователя из пропуска (без проверки подписи) — только чтобы заранее начать запрос; решает проверенный admin.auth.getUser */
+function claimedUid(jwt: string): string | null {
+  try {
+    const sub = JSON.parse(atob(jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).sub
+    return typeof sub === 'string' && /^[0-9a-f-]{36}$/.test(sub) ? sub : null
+  } catch {
+    return null
+  }
+}
+
 interface ImageCheck {
   /** результат взят из прошлой проверки (ИИ не спрашивали) */
   cached?: boolean
@@ -645,13 +781,13 @@ async function describePost(postId: string, uid: string, images: ImgIn[], quick:
     const c = await checkImage({ src: img.thumb, ratio: img.ratio }, uid, false)
     if (!c.ok) bad.push(...c.reasons.map((r) => `Картинка ${i + 1} в ленте: ${r}`))
   }
-  if (bad.length) await admin.from('posts').update({ hidden: true, hidden_reason: bad.join('. ') }).eq('id', postId)
+  if (bad.length) await admin.from('posts').update({ hidden: true, hidden_reason: bad.join('. '), hidden_by: 'ai' }).eq('id', postId)
   // название и категории — ИИ проверяет уже после публикации; нарушение — скрываем сразу, не дожидаясь разбора картинок
   if (words.length) {
     const t = await checkTexts(words)
     if (!t.ok) {
       bad.push(...t.reasons.map((r) => `Название или категории: ${r}`))
-      await admin.from('posts').update({ hidden: true, hidden_reason: bad.join('. ') }).eq('id', postId)
+      await admin.from('posts').update({ hidden: true, hidden_reason: bad.join('. '), hidden_by: 'ai' }).eq('id', postId)
     }
   }
   for (const [i, img] of images.entries()) {
@@ -691,7 +827,7 @@ async function describePost(postId: string, uid: string, images: ImgIn[], quick:
       ai_meta: meta,
       ai_tags: metaTags(meta),
       ai_text: texts.join('\n') || null,
-      ...(bad.length ? { hidden: true, hidden_reason: [...new Set(bad)].join('. ') } : {}),
+      ...(bad.length ? { hidden: true, hidden_reason: [...new Set(bad)].join('. '), hidden_by: 'ai' } : {}),
     })
     .eq('id', postId)
 }
@@ -888,10 +1024,27 @@ export async function handle(req: Request): Promise<Response> {
 
   const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
   const tAuth = performance.now()
+  // заблокирован ли — спрашиваем одновременно с проверкой входа (минус один круг до базы)
+  const claimed = claimedUid(jwt)
+  const blockedQ = claimed
+    ? Promise.resolve(admin.from('profiles').select('blocked').eq('id', claimed).maybeSingle()).then((r) => !!r.data?.blocked, () => false)
+    : Promise.resolve(false)
   const { data: auth } = await admin.auth.getUser(jwt)
   const authMs = ms(tAuth)
   const uid = auth?.user?.id
   if (!uid) return json({ ok: false, reasons: ['Нужно войти'] }, 401)
+  if (['check-image', 'post', 'try', 'reply', 'profile'].includes(String(body.action)) && uid === claimed && (await blockedQ))
+    return json({ ok: false, reasons: ['Ваш аккаунт заблокирован за нарушение правил Клубка'] }, 403)
+
+  // админка: действия модератора (кто админ — таблица admins)
+  if (body.action === 'admin') {
+    const { data: isA } = await admin.from('admins').select('user_id').eq('user_id', uid).maybeSingle()
+    if (!isA) return json({ ok: false, reasons: ['Нет доступа'] }, 403)
+    const type = str(body.type, 10) as Target
+    const id = str(body.id, 40)
+    if (!TARGETS.includes(type) || !/^[0-9a-f-]{36}$/.test(id)) return json({ ok: false, reasons: ['Неверный запрос'] }, 400)
+    return adminAct(uid, str(body.op, 20), type, id, str(body.note, 300))
+  }
 
   // адреса картинок могут прийти через проброс (российский сервер) — приводим к адресу Supabase
   for (const k of ['img', 'avatar'] as const) if (body[k] && typeof body[k] === 'object') body[k] = canon(body[k] as ImgIn)
@@ -1006,15 +1159,8 @@ export async function handle(req: Request): Promise<Response> {
       const { data: post } = await admin.from('posts').select('author_id, images').eq('id', id).maybeSingle()
       if (!post) return json({ ok: true })
       if (post.author_id !== uid) return json({ ok: false, reasons: ['Удалить можно только свою идею'] }, 403)
-      const { data: tries } = await admin.from('tries').select('img').eq('post_id', id)
-      const own = ((post.images as ImgIn[]) ?? []).flatMap((i) => [i, ...(i.thumb ? [{ src: i.thumb, ratio: i.ratio }] : [])])
-      const imgs = [...own, ...(tries ?? []).map((t) => t.img as ImgIn | null)].filter(
-        (i): i is ImgIn => typeof i?.src === 'string' && i.src.startsWith(PUBLIC_PREFIX) && !i.src.startsWith(`${PUBLIC_PREFIX}demo/`),
-      )
-      const { error } = await admin.from('posts').delete().eq('id', id)
-      if (error) return json({ ok: false, reasons: ['Не получилось удалить'], detail: error.message }, 500)
-      await removeImages(imgs)
-      if (imgs.length) await admin.from('image_checks').delete().in('path', imgs.map((i) => i.src.slice(PUBLIC_PREFIX.length)))
+      const err = await deletePostFully(id, post.images as ImgIn[])
+      if (err) return json({ ok: false, reasons: ['Не получилось удалить'], detail: err }, 500)
       return json({ ok: true, row: null })
     }
 

@@ -117,13 +117,13 @@ export function ChipsSkeleton() {
 }
 
 /** Шапка профиля — та же разметка, что в Profile: карточка автора (с кнопками), цифры; у себя на компьютере — тема и правила; вкладки */
-export function ProfileHeadSkeleton({ self, back }: { self?: boolean; back?: boolean }) {
+export function ProfileHeadSkeleton({ self }: { self?: boolean }) {
   return (
     <div className="relative" role="status" aria-label="Загрузка">
-      {back && <Bone className="absolute top-0 left-0 h-10 w-10 rounded-2xl max-lg:hidden" />}
+      <Bone className="absolute top-0 left-0 h-10 w-10 rounded-2xl max-xl:hidden" />
       <section className="flex flex-col gap-2 md:flex-row md:flex-wrap md:justify-center">
         <div className="card flex min-w-0 items-center gap-3 p-3 md:max-w-[560px] md:py-2">
-          {back && <Bone className="h-10 w-10 shrink-0 rounded-2xl lg:hidden" />}
+          <Bone className="h-10 w-10 shrink-0 rounded-2xl xl:hidden" />
           <Bone className="h-14 w-14 shrink-0 rounded-full" />
           <div className="min-w-0 flex-1">
             <h1 className="text-xl leading-7 font-bold">
@@ -173,9 +173,12 @@ export function ProfileHeadSkeleton({ self, back }: { self?: boolean; back?: boo
 export function PostSkeleton() {
   return (
     // не короче экрана: полоса прокрутки есть сразу и не сдвигает страницу, когда появится настоящая (длинная) страница
-    <div className="mx-auto min-h-dvh max-w-6xl px-3 pt-3 md:px-6 md:pt-6" role="status" aria-label="Загрузка">
+    <div className="mx-auto min-h-dvh max-w-6xl px-3 pt-3 md:px-6 md:pt-6 md:pl-[72px] xl:pl-6" role="status" aria-label="Загрузка">
       <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:gap-8">
-        <Bone className="aspect-[4/5] rounded-2xl" />
+        <div className="relative">
+          <Bone className="aspect-[4/5] rounded-2xl" />
+          <Bone className="absolute top-0 -left-12 h-10 w-10 rounded-2xl max-md:hidden" />
+        </div>
         <div className="min-w-0">
           <div className="mb-3 flex items-start gap-2">
             <div className="flex flex-1 flex-wrap gap-2">

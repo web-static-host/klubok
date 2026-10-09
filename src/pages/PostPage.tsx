@@ -101,16 +101,16 @@ export function PostPage() {
 
   return (
     <>
-      <div className="mx-auto max-w-6xl px-3 pt-3 md:px-6 md:pt-6">
+      <div className="mx-auto max-w-6xl px-3 pt-3 md:px-6 md:pt-6 md:pl-[72px] xl:pl-6">
         <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:gap-8">
           {/* картинки — в них вся идея */}
-          {/* «Назад» — поверх картинки слева сверху, отдельной полосы над страницей нет */}
+          {/* «Назад» — слева от картинки, вплотную (место под неё — отступ страницы); на телефоне места нет — поверх картинки слева сверху */}
           <div className="relative md:sticky md:top-20 md:self-start">
             <Gallery key={p.id} post={p} />
             <IconButton
               icon={ArrowLeft}
               label="Назад"
-              className="absolute top-2 left-2 z-10 shadow-sm"
+              className="absolute top-2 left-2 z-10 shadow-sm md:top-0 md:-left-12 md:shadow-none"
               onClick={() => (window.history.length > 1 ? nav(-1) : nav('/'))}
             />
           </div>

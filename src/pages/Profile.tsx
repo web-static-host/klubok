@@ -29,7 +29,7 @@ export function Profile({ self }: { self?: boolean }) {
   if ((self && !s.authReady) || !s.loaded)
     return (
       <div className="px-2 pt-2 sm:px-3 md:px-4 lg:px-6">
-        <ProfileHeadSkeleton self={self} back={!self} />
+        <ProfileHeadSkeleton self={self} />
         <div className="mt-2">
           <MasonrySkeleton rows={2} />
         </div>
@@ -63,10 +63,10 @@ export function Profile({ self }: { self?: boolean }) {
       {/* шапка — в ширину: карточка автора (с кнопкой «Изменить профиль» / «Подписаться»), цифры; у себя ниже — настройки. На телефоне — столбиком */}
       <div className="relative">
         {/* «Назад» — не отдельной строкой: на широком экране слева от шапки, на узком — в карточке автора */}
-        {!self && <IconButton icon={ArrowLeft} label="Назад" className="absolute top-0 left-0 max-lg:hidden" onClick={back} />}
+        <IconButton icon={ArrowLeft} label="Назад" className="absolute top-0 left-0 max-xl:hidden" onClick={back} />
         <section className="fade-up flex flex-col gap-2 md:flex-row md:flex-wrap md:justify-center">
           <div className="card flex min-w-0 items-center gap-3 p-3 md:max-w-[560px] md:py-2">
-            {!self && <IconButton icon={ArrowLeft} label="Назад" className="lg:hidden" onClick={back} />}
+            <IconButton icon={ArrowLeft} label="Назад" className="xl:hidden" onClick={back} />
             <Avatar user={u} size={56} />
             <div className="min-w-0 flex-1">
               <h1 className="truncate text-xl leading-7 font-bold">{u.name}</h1>

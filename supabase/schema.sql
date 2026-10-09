@@ -279,3 +279,17 @@ on conflict (id) do nothing;
 insert into folders (owner_id, name)
 select p.id, 'Хочу попробовать' from profiles p
 where not p.is_demo and not exists (select 1 from folders f where f.owner_id = p.id);
+
+-- живые обновления (Realtime): идеи, отзывы, ответы — см. migrations/012_realtime.sql
+do $$
+declare t text;
+begin
+  if not exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    create publication supabase_realtime;
+  end if;
+  foreach t in array array['posts', 'tries', 'try_replies'] loop
+    if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
+      execute format('alter publication supabase_realtime add table public.%I', t);
+    end if;
+  end loop;
+end $$;

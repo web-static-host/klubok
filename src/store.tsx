@@ -408,6 +408,77 @@ export function StoreProvider({
     }
   }, [uid, mineAttempt])
 
+  // живые обновления (Supabase Realtime, через проброс): что пришло — сразу на экран, без перезагрузки страницы
+  const usersRef = useRef(users)
+  const postsRef = useRef(posts)
+  useEffect(() => {
+    usersRef.current = users
+    postsRef.current = posts
+  }, [users, posts])
+  // автор нового отзыва или ответа мог зарегистрироваться после загрузки страницы — подгружаем его профиль
+  const needUser = useCallback((id: string) => {
+    if (usersRef.current.some((u) => u.id === id)) return
+    supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) setUsers((us) => (us.some((u) => u.id === id) ? us : [...us, toUser(data as ProfileRow)]))
+      })
+  }, [])
+  // новые отзывы «Я попробовал» и ответы на них — у всех
+  useEffect(() => {
+    const ch = supabase
+      .channel('tries')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'tries' }, ({ new: r }) => {
+        const t = toTry(r as TryRow)
+        setTries((ts) => (ts.some((x) => x.id === t.id) ? ts : [t, ...ts]))
+        needUser(t.userId)
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'tries' }, ({ old }) =>
+        setTries((ts) => ts.filter((x) => x.id !== old.id)),
+      )
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'try_replies' }, ({ new: r }) => {
+        const x = toReply(r as ReplyRow)
+        setReplies((rs) => (rs.some((y) => y.id === x.id) ? rs : [...rs, x]))
+        needUser(x.userId)
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'try_replies' }, ({ old }) =>
+        setReplies((rs) => rs.filter((x) => x.id !== old.id)),
+      )
+      .subscribe()
+    return () => {
+      supabase.removeChannel(ch)
+    }
+  }, [needUser])
+  // свои идеи: проверка после публикации закончилась — появились теги или идея скрыта (тогда — сообщение с причиной).
+  // Счётчики показов тоже меняют идею, поэтому заново берём её из базы, только пока теги не пришли или поменялось «скрыта»
+  useEffect(() => {
+    if (!uid) return
+    const ch = supabase
+      .channel(`mine-${uid}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'posts', filter: `author_id=eq.${uid}` }, ({ new: r }) => {
+        const was = postsRef.current.find((p) => p.id === r.id)
+        if (!was || (!!r.hidden === !!was.hidden && was.ai?.meta)) return
+        supabase
+          .from('posts')
+          .select('*')
+          .eq('id', r.id)
+          .maybeSingle()
+          .then(({ data }) => {
+            if (!data) return
+            const p = toPost(data as PostRow)
+            setPosts((ps) => ps.map((x) => (x.id === p.id ? p : x)))
+            if (p.hidden && !postsRef.current.find((x) => x.id === p.id)?.hidden) setNotice(`Идея «${p.title}» скрыта: ${p.hidden}`)
+          })
+      })
+      .subscribe()
+    return () => {
+      supabase.removeChannel(ch)
+    }
+  }, [uid])
+
   // тема
   useEffect(() => {
     try {

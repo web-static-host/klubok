@@ -21,6 +21,18 @@ location /api/ {
     proxy_send_timeout 180s;
 }
 
+# Клубок: живые обновления (Realtime) — постоянное соединение
+location /api/realtime/ {
+    proxy_pass https://exjpqpmfdumjqzgehtpg.supabase.co/realtime/;
+    proxy_ssl_server_name on;
+    proxy_set_header Host exjpqpmfdumjqzgehtpg.supabase.co;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_read_timeout 1h;
+    proxy_send_timeout 1h;
+}
+
 # Клубок: картинки — с запоминанием на сервере на 30 дней (второй и следующие показы — мгновенно)
 location /api/storage/v1/object/public/ {
     proxy_pass https://exjpqpmfdumjqzgehtpg.supabase.co/storage/v1/object/public/;

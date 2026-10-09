@@ -1,0 +1,32 @@
+# Выкладка серверной функции publish в Supabase при каждом её изменении в main.
+# Нужен секрет SUPABASE_ACCESS_TOKEN (GitHub → Settings → Secrets and variables → Actions). Нет секрета — шаг пропускается.
+name: Выкладка функции publish в Supabase
+
+on:
+  push:
+    branches: [main]
+    paths: ['supabase/functions/**']
+  workflow_dispatch:
+
+concurrency:
+  group: supabase-function
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        with:
+          version: latest
+      # --no-verify-jwt: функция сама проверяет вход (проверка ника при регистрации работает без входа)
+      - name: Выложить publish
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        run: supabase functions deploy publish --project-ref exjpqpmfdumjqzgehtpg --use-api --no-verify-jwt
+      - name: Нет ключа
+        if: env.SUPABASE_ACCESS_TOKEN == ''
+        run: echo "Секрет SUPABASE_ACCESS_TOKEN не задан — функцию нужно выложить вручную"

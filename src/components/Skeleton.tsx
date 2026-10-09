@@ -124,7 +124,7 @@ export function ProfileHeadSkeleton({ self }: { self?: boolean }) {
       <section className="flex flex-col gap-2 md:flex-row md:flex-wrap">
         <div className="card flex min-w-0 items-center gap-3 p-3 md:min-w-[280px] md:flex-1">
           <Bone className="h-14 w-14 shrink-0 rounded-full" />
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h1 className="text-xl leading-7 font-bold">
               <Line w="9em" />
             </h1>
@@ -132,6 +132,7 @@ export function ProfileHeadSkeleton({ self }: { self?: boolean }) {
               <Line w="7em" />
             </p>
           </div>
+          <Bone className="h-9 w-9 shrink-0 rounded-2xl sm:w-[190px]" />
         </div>
         <div className="grid grid-cols-3 gap-2 md:flex">
           {[0, 1, 2].map((i) => (
@@ -145,12 +146,18 @@ export function ProfileHeadSkeleton({ self }: { self?: boolean }) {
             </div>
           ))}
         </div>
-        <Bone className="min-h-12 rounded-2xl md:w-[200px]" />
       </section>
       {self && (
-        <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-3">
+        <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-[1fr_auto_auto]">
           {[0, 1, 2].map((i) => (
-            <Bone key={i} className={i ? 'h-[50px] rounded-2xl md:h-[52px]' : 'col-span-2 h-[52px] rounded-2xl md:col-span-1'} />
+            <Bone
+              key={i}
+              className={
+                i
+                  ? cx('h-[50px] rounded-2xl md:h-[52px]', i === 1 ? 'md:w-[170px]' : 'md:w-[330px]')
+                  : 'col-span-2 h-[52px] rounded-2xl md:col-span-1'
+              }
+            />
           ))}
         </div>
       )}

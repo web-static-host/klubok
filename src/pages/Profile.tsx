@@ -68,15 +68,36 @@ export function Profile({ self }: { self?: boolean }) {
           <IconButton icon={ArrowLeft} label="Назад" onClick={() => (window.history.length > 1 ? nav(-1) : nav('/'))} />
         </div>
       )}
-      {/* шапка — в ширину: карточка автора, цифры, кнопка; у себя ниже — настройки. На телефоне — столбиком */}
+      {/* шапка — в ширину: карточка автора (с кнопкой «Изменить профиль» / «Подписаться»), цифры; у себя ниже — настройки. На телефоне — столбиком */}
       <section className="fade-up flex flex-col gap-2 md:flex-row md:flex-wrap">
         <div className="card flex min-w-0 items-center gap-3 p-3 md:min-w-[280px] md:flex-1">
           <Avatar user={u} size={56} />
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h1 className="truncate text-xl leading-7 font-bold">{u.name}</h1>
             <p className="truncate text-sm">@{u.handle}</p>
             {u.bio && <p className="mt-1 line-clamp-2 text-sm leading-snug">{u.bio}</p>}
           </div>
+          {mine ? (
+            <Button
+              kind="neutral"
+              size="sm"
+              icon={Pencil}
+              className="shrink-0"
+              aria-label="Изменить профиль"
+              onClick={() => setEditing(true)}
+            >
+              <span className="max-sm:hidden">Изменить профиль</span>
+            </Button>
+          ) : (
+            <Button
+              kind={s.follows.includes(u.id) ? 'neutral' : 'primary'}
+              size="sm"
+              className="shrink-0"
+              onClick={() => s.toggleFollow(u.id)}
+            >
+              {s.follows.includes(u.id) ? 'Вы подписаны' : 'Подписаться'}
+            </Button>
+          )}
         </div>
         <dl className="grid grid-cols-3 gap-2 md:flex">
           {[
@@ -90,27 +111,18 @@ export function Profile({ self }: { self?: boolean }) {
             </div>
           ))}
         </dl>
-        {mine ? (
-          <Button kind="neutral" icon={Pencil} onClick={() => setEditing(true)}>
-            Изменить профиль
-          </Button>
-        ) : (
-          <Button kind={s.follows.includes(u.id) ? 'neutral' : 'primary'} className="md:min-w-[180px]" onClick={() => s.toggleFollow(u.id)}>
-            {s.follows.includes(u.id) ? 'Вы подписаны' : 'Подписаться'}
-          </Button>
-        )}
       </section>
       {mine && (
-        <section className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-3" aria-label="Настройки">
+        <section className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-[1fr_auto_auto]" aria-label="Настройки">
           <div className="col-span-2 md:col-span-1">
             <ThemeSettings />
           </div>
-          <Link to="/rules" className="card flex min-h-12 items-center justify-between px-4 text-sm font-semibold hover:bg-active">
+          <Link to="/rules" className="card flex min-h-12 items-center justify-between gap-4 px-4 text-sm font-semibold hover:bg-active">
             Правила Клубка <ChevronRight size={18} />
           </Link>
           <div className="card flex min-h-12 items-center justify-center gap-3 p-1.5 sm:justify-start sm:pl-4">
             {/* на телефоне почта не помещается — только «Выйти» */}
-            <p className="hidden min-w-0 flex-1 truncate text-sm sm:block">{s.email}</p>
+            <p className="hidden min-w-0 flex-1 truncate text-sm sm:block md:max-w-[260px]">{s.email}</p>
             <Button kind="neutral" size="sm" icon={LogOut} onClick={() => s.signOut()}>
               Выйти
             </Button>

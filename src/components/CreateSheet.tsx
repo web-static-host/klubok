@@ -125,6 +125,7 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
     const list = own.trim() ? addOwn() : topics
     if (!list) return
     if (!list.length) return setErr('Выберите хотя бы одну категорию')
+    if (beforeAfter && images.length < 3) return setErr('Для «до и после» добавьте ещё хотя бы одну картинку — как вы это сделали')
     if (pics.bad) return setErr('Уберите картинки, которые не прошли проверку (отмечены красным)')
     if (pics.pending) {
       setErr('')
@@ -133,7 +134,7 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
     setBusy(true)
     try {
       const id = await addPost({
-        type: beforeAfter && images.length === 2 ? 'beforeafter' : 'photo',
+        type: beforeAfter ? 'beforeafter' : 'photo',
         topics: list,
         title: title.trim().replace(/\s+/g, ' '),
         images: pics.result(),
@@ -234,7 +235,7 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
                   </span>
                 )}
                 <span className="glass-strong absolute top-1.5 left-1.5 rounded-full px-2 text-[11px] font-bold">
-                  {beforeAfter && images.length === 2 ? (i ? 'После' : 'До') : i + 1}
+                  {beforeAfter && i < 2 ? (i ? 'После' : 'До') : i + 1}
                 </span>
                 <button
                   type="button"
@@ -295,16 +296,18 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
           }}
         />
 
-        {images.length === 2 && (
-          <label className="card flex cursor-pointer items-center gap-3 px-4 py-3">
+        {images.length >= 2 && (
+          <label className="card flex cursor-pointer items-start gap-3 px-4 py-3">
             <input
               type="checkbox"
               checked={beforeAfter}
               onChange={(e) => setBeforeAfter(e.target.checked)}
-              className="h-5 w-5 accent-accent"
+              className="mt-0.5 h-5 w-5 shrink-0 accent-accent"
             />
-            <span className="text-sm">
-              <b>До и после</b> — показать две картинки рядом
+            <span className="text-sm leading-snug">
+              <b>До и после</b> — 1-я картинка «до», 2-я «после», они встанут рядом. Дальше — как вы это сделали: нужна хотя бы ещё одна
+              картинка.
+              {beforeAfter && images.length < 3 && <span className="mt-1 block font-semibold text-accent">Добавьте ещё картинку</span>}
             </span>
           </label>
         )}

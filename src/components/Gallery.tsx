@@ -8,44 +8,30 @@ import { Picture } from './ui'
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v))
 
 /**
- * Картинки поста. Несколько — листаются пальцем, как карусель в Instagram; «до и после» — две рядом.
- * Картинки не обрезаются (на них текст), нажатие — просмотр на весь экран с увеличением.
+ * Картинки поста. Несколько — листаются пальцем, как карусель в Instagram.
+ * «До и после»: первый слайд — две первые картинки рядом, дальше листаются остальные (как сделали).
+ * Картинки с содержимым не обрезаются (на них текст), нажатие — просмотр на весь экран с увеличением.
  */
 export function Gallery({ post, maxRatio = 1.6, className }: { post: Post; maxRatio?: number; className?: string }) {
   const [open, setOpen] = useState<number | null>(null)
   const [index, setIndex] = useState(0)
   const strip = useRef<HTMLDivElement>(null)
   const imgs = post.images
-  const many = imgs.length > 1
+  const pair = post.type === 'beforeafter' && imgs.length >= 2
+  // слайд — номера картинок на нём: у «до и после» первый слайд из двух
+  const slides: number[][] = pair ? [[0, 1], ...imgs.slice(2).map((_, i) => [i + 2])] : imgs.map((_, i) => [i])
+  const many = slides.length > 1
+
+  // высота — общая для всех слайдов. Обычно по первой картинке. У «до и после» — между парой (две рядом — вдвое ниже)
+  // и первой картинкой с шагами: и пара видна крупно, и картинки с текстом не мельчат.
+  const pairRatio = pair ? (imgs[0].ratio + imgs[1].ratio) / 4 : 0
+  const ratio = clamp(pair ? (imgs[2] ? (pairRatio + imgs[2].ratio) / 2 : pairRatio) : (imgs[0]?.ratio ?? 1), 0.6, maxRatio)
 
   const go = (i: number) => {
     const el = strip.current
-    if (el) el.scrollTo({ left: clamp(i, 0, imgs.length - 1) * el.clientWidth, behavior: 'smooth' })
+    if (el) el.scrollTo({ left: clamp(i, 0, slides.length - 1) * el.clientWidth, behavior: 'smooth' })
   }
 
-  const viewer = open !== null && <Lightbox images={imgs} start={open} title={post.title} onClose={() => setOpen(null)} />
-
-  if (post.type === 'beforeafter' && imgs.length >= 2)
-    return (
-      <div className={cx('grid grid-cols-2 gap-2', className)}>
-        {imgs.slice(0, 2).map((im, i) => (
-          <button
-            key={i}
-            type="button"
-            onClick={() => setOpen(i)}
-            className="relative rounded-2xl"
-            aria-label={`${i ? 'После' : 'До'} — открыть`}
-          >
-            <Picture img={{ ...im, ratio: clamp(imgs[0].ratio, 0.75, maxRatio) }} w={600} className="rounded-2xl" contain />
-            <span className="glass-strong absolute bottom-2 left-2 rounded-full px-3 py-1 text-xs font-bold">{i ? 'После' : 'До'}</span>
-          </button>
-        ))}
-        {viewer}
-      </div>
-    )
-
-  // высота — по первой картинке; остальные вписываются без обрезки
-  const ratio = clamp(imgs[0]?.ratio ?? 1, 0.6, maxRatio)
   return (
     <div className={cx('relative', className)}>
       <div
@@ -53,33 +39,53 @@ export function Gallery({ post, maxRatio = 1.6, className }: { post: Post; maxRa
         onScroll={(e) => setIndex(Math.round(e.currentTarget.scrollLeft / e.currentTarget.clientWidth))}
         className="no-scrollbar flex snap-x snap-mandatory overflow-x-auto rounded-2xl"
       >
-        {imgs.map((im, i) => (
-          <button
-            key={i}
-            type="button"
-            onClick={() => setOpen(i)}
-            className="w-full shrink-0 snap-center"
-            aria-label={many ? `Картинка ${i + 1} из ${imgs.length} — открыть` : 'Открыть картинку'}
-          >
-            <Picture img={{ ...im, ratio }} w={900} contain alt={`${post.title}${many ? ` — ${i + 1}` : ''}`} />
-          </button>
-        ))}
+        {slides.map((slide, k) =>
+          slide.length === 2 ? (
+            // «до» и «после» рядом — каждая половина заполняется целиком (это фото, а не картинки с текстом)
+            <div key={k} className="grid w-full shrink-0 snap-center grid-cols-2 gap-0.5" style={{ aspectRatio: `1 / ${ratio}` }}>
+              {slide.map((i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setOpen(i)}
+                  className="relative"
+                  aria-label={`${i ? 'После' : 'До'} — открыть`}
+                >
+                  <Picture fill img={imgs[i]} w={600} className="h-full" alt={`${post.title} — ${i ? 'после' : 'до'}`} />
+                  <span className="glass-strong pointer-events-none absolute bottom-2 left-2 rounded-full px-3 py-1 text-xs font-bold">
+                    {i ? 'После' : 'До'}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setOpen(slide[0])}
+              className="w-full shrink-0 snap-center"
+              aria-label={many ? `Картинка ${k + 1} из ${slides.length} — открыть` : 'Открыть картинку'}
+            >
+              <Picture img={{ ...imgs[slide[0]], ratio }} w={900} contain alt={`${post.title}${many ? ` — ${k + 1}` : ''}`} />
+            </button>
+          ),
+        )}
       </div>
       {many && (
         <>
           <span className="glass-strong pointer-events-none absolute top-2 right-2 rounded-full px-2.5 py-1 text-xs font-bold">
-            {index + 1} / {imgs.length}
+            {index + 1} / {slides.length}
           </span>
           <div className="mt-2 flex justify-center gap-1.5" aria-hidden>
-            {imgs.map((_, i) => (
+            {slides.map((_, i) => (
               <span key={i} className={cx('h-1.5 rounded-full transition-all', i === index ? 'w-4 bg-accent' : 'w-1.5 bg-line-strong')} />
             ))}
           </div>
           {index > 0 && <Arrow dir={-1} onClick={() => go(index - 1)} />}
-          {index < imgs.length - 1 && <Arrow dir={1} onClick={() => go(index + 1)} />}
+          {index < slides.length - 1 && <Arrow dir={1} onClick={() => go(index + 1)} />}
         </>
       )}
-      {viewer}
+      {open !== null && <Lightbox images={imgs} start={open} title={post.title} onClose={() => setOpen(null)} />}
     </div>
   )
 }

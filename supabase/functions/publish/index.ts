@@ -524,7 +524,8 @@ export async function handle(req: Request): Promise<Response> {
         ...new Set((Array.isArray(body.topics) ? body.topics : [body.topic]).map((t) => str(t, 40)).filter(Boolean)),
       ].slice(0, 5)
       const images = (Array.isArray(body.images) ? body.images : []) as ImgIn[]
-      const type = body.type === 'beforeafter' && images.length === 2 ? 'beforeafter' : 'photo'
+      // «до и после»: 1-я — до, 2-я — после, и хотя бы ещё одна картинка (как сделали)
+      const type = body.type === 'beforeafter' && images.length >= 3 ? 'beforeafter' : 'photo'
       if (!title || !topics.length) return json({ ok: false, reasons: ['Нужны название и категория'] }, 400)
       if (images.length < 1 || images.length > 10 || !images.every((i) => ownImage(i, uid)))
         return json({ ok: false, reasons: ['Нужно от 1 до 10 своих картинок'] }, 400)

@@ -57,9 +57,13 @@ export function PinCard({ post, folderId }: { post: Post; folderId?: string }) {
           ) : (
             <Picture img={post.images[0]} w={500} className="rounded-2xl" alt={post.title} />
           )}
-          {post.type !== 'beforeafter' && post.images.length > 1 && (
+          {post.images.length > (post.type === 'beforeafter' ? 2 : 1) && (
             <span
-              className="glass-strong pointer-events-none absolute right-2 bottom-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold"
+              className={cx(
+                'glass-strong pointer-events-none absolute inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold transition-opacity',
+                // у «до и после» внизу надписи — значок наверх (при наведении там категории — прячем)
+                post.type === 'beforeafter' ? 'top-2 left-2 md:group-hover:opacity-0' : 'right-2 bottom-2',
+              )}
               title={`${post.images.length} картинок`}
             >
               <Images size={12} strokeWidth={2.4} /> {post.images.length}

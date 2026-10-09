@@ -7,7 +7,7 @@ import { useUi } from '../ui-context'
 import { cx, fileToImg } from '../lib'
 import { Sheet } from './Sheet'
 import { RulesLink } from './RulesSheet'
-import { useCheckedImages, type CheckedImg } from './useCheckedImages'
+import { useCheckedImages } from './useCheckedImages'
 import { warmChecks } from '../supabase'
 import { Button, Toggle } from './ui'
 import { TopicPicker } from './TopicPicker'
@@ -520,47 +520,8 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
               Картинки проверяются. Название и категории подберутся по ним сами — их можно поменять.
             </p>
           )}
-          {/* ТЕСТ: замеры проверки выбранной картинки — убрать после тестов */}
-          {cur?.times && <CheckTimes n={sel + 1} t={cur.times} />}
         </div>
       </form>
     </Sheet>
-  )
-}
-
-// ТЕСТ: сколько заняла проверка картинки и на что ушло время — убрать после тестов
-const sec = (ms?: number) => (ms === undefined ? '—' : `${(ms / 1000).toFixed(1).replace('.', ',')} с`)
-function CheckTimes({ n, t }: { n: number; t: NonNullable<CheckedImg['times']> }) {
-  const s = t.server ?? {}
-  const rows: [string, string, boolean?][] = s.cached
-    ? [
-        ['Загрузка картинки на сервер', sec(t.upload)],
-        ['Проверка (взята из прошлой, ИИ не спрашивали)', sec(t.request)],
-      ]
-    : [
-        ['Загрузка картинки на сервер', sec(t.upload)],
-        ...(t.wait > 100 ? ([['Ждала, пока проверятся предыдущие', sec(t.wait)]] as [string, string][]) : []),
-        ['Запрос проверки целиком', sec(t.request)],
-        ['· скачать картинку', `${sec(s.download)}${s.kb ? ` (${s.kb} КБ)` : ''}`, true],
-        ['· вход в ГигаЧат', sec(s.login), true],
-        ['· отправить картинку в ГигаЧат', sec(s.upload), true],
-        ['· ответ ГигаЧата', `${sec(s.ai)}${s.tokens_out ? ` (написал ${s.tokens_out} ток.)` : ''}`, true],
-        ['· сохранить результат', s.save === undefined ? 'после ответа' : sec(s.save), true],
-        ['· проверка, кто вы (вход на сайт)', sec(s.auth), true],
-        ...(s.cold ? ([['· запуск копии функции', sec(s.boot), true]] as [string, string, boolean][]) : []),
-        ['· дорога туда и обратно', sec(t.request - (s.total ?? 0) - (s.auth ?? 0) - (s.boot ?? 0)), true],
-      ]
-  return (
-    <div className="rounded-2xl border border-dashed border-line-strong p-3 text-xs leading-relaxed">
-      <p className="mb-1 font-semibold">Тест: проверка картинки {n}</p>
-      <dl className="grid grid-cols-[1fr_auto] gap-x-3">
-        {rows.map(([k, v, sub]) => (
-          <div key={k} className="contents">
-            <dt className={cx('text-muted', sub && 'pl-2')}>{k}</dt>
-            <dd className="text-right font-semibold tabular-nums">{v}</dd>
-          </div>
-        ))}
-      </dl>
-    </div>
   )
 }

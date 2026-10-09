@@ -607,11 +607,15 @@ async function checkTexts(texts: string[], profile = false): Promise<{ ok: boole
 }
 
 /** Тексты + картинки. Картинки по очереди: у личного тарифа GigaChat один поток */
-export async function moderate(texts: string[], images: ImgIn[], uid: string, allowPeople = false, profile = false) {
+export async function moderate(texts: string[], images: ImgIn[], uid: string, allowPeople = false, profile = false, tm: Timing = {}) {
+  let t0 = performance.now()
   const t = await checkTexts(texts, profile)
+  tm.texts = ms(t0)
+  t0 = performance.now()
   if (!t.ok) return { ok: false, reasons: t.reasons, ai: t.ai, tags: [] as string[], meta: emptyMeta(), aiText: '' }
   const checks: ImageCheck[] = []
   for (const img of images) checks.push(await checkImage(img, uid, allowPeople))
+  tm.images = ms(t0)
   const reasons = checks.flatMap((c, i) => (c.ok ? [] : c.reasons.map((r) => (images.length > 1 ? `Картинка ${i + 1}: ${r}` : r))))
   return {
     ok: reasons.length === 0,
@@ -752,7 +756,10 @@ export async function handle(req: Request): Promise<Response> {
       if (!title || !topics.length) return json({ ok: false, reasons: ['Нужны название и категория'] }, 400)
       if (images.length < 1 || images.length > 10 || !images.every((i) => ownImage(i, uid)))
         return json({ ok: false, reasons: ['Нужно от 1 до 10 своих картинок'] }, 400)
-      const m = await moderate([title, ...topics], images, uid)
+      // замеры публикации (ТЕСТ) — пишутся в posts.publish_timing
+      const ptm: Timing = { auth: authMs }
+      const pt0 = performance.now()
+      const m = await moderate([title, ...topics], images, uid, false, false, ptm)
       // картинки не удаляем: человек исправит название или уберёт плохую картинку и опубликует снова
       if (!m.ok) return json({ ok: false, reasons: m.reasons })
       const { data, error } = await admin
@@ -768,6 +775,7 @@ export async function handle(req: Request): Promise<Response> {
           ai_meta: m.meta,
           ai_text: m.aiText || null,
           checked_by_ai: m.ai,
+          publish_timing: { ...ptm, before_insert: ms(pt0) },
         })
         .select()
         .single()

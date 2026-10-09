@@ -16,8 +16,6 @@ export interface CheckedImg {
   topics?: string[]
   /** название, которое ИИ предложил по этой картинке */
   title?: string
-  /** ТЕСТ: замеры, мс — на сайте (загрузка, ожидание очереди, весь запрос проверки) и на сервере (timing) */
-  times?: { upload: number; wait: number; request: number; server?: Record<string, number> }
 }
 
 export function useCheckedImages(purpose: 'post' | 'avatar') {
@@ -32,18 +30,14 @@ export function useCheckedImages(purpose: 'post' | 'avatar') {
     const fresh: CheckedImg[] = imgs.map((preview) => ({ key: crypto.randomUUID(), preview, status: 'checking' }))
     setItems((a) => [...a, ...fresh])
     for (const it of fresh) {
-      const t0 = performance.now()
-      let upMs = 0
-      const up = uploadImg(it.preview).then((u) => ((upMs = Math.round(performance.now() - t0)), u)) // загрузки — сразу все
+      const up = uploadImg(it.preview) // загрузки — сразу все
       up.catch(() => {})
       queue.current = queue.current.then(async () => {
         try {
           const uploaded = await up
           patch(it.key, { uploaded })
-          const t1 = performance.now()
           const r = await checkImg(uploaded, purpose)
-          const times = { upload: upMs, wait: Math.round(t1 - t0) - upMs, request: Math.round(performance.now() - t1), server: r.timing }
-          patch(it.key, r.ok ? { status: 'ok', topics: r.topics, title: r.title, times } : { status: 'bad', reasons: r.reasons, times })
+          patch(it.key, r.ok ? { status: 'ok', topics: r.topics, title: r.title } : { status: 'bad', reasons: r.reasons })
         } catch {
           patch(it.key, { status: 'error' })
         }

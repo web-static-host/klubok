@@ -12,3 +12,15 @@ const cols = ['total', 'cold', 'lookup', 'download', 'kb', 'login', 'upload', 'a
 console.log(cols.join('\t'))
 for (const { timing } of rows) console.log(cols.map((c) => timing?.[c] ?? '').join('\t'))
 if (!rows.length) console.log('замеров пока нет')
+
+// публикации: проверка текста (ИИ), картинок (из памяти проверок), до записи
+const r2 = await fetch(`https://api.supabase.com/v1/projects/${REF}/database/query`, {
+  method: 'POST',
+  headers: { Authorization: `Bearer ${process.env.SUPABASE_ACCESS_TOKEN}`, 'Content-Type': 'application/json' },
+  body: JSON.stringify({ query: 'select publish_timing from posts where publish_timing is not null order by created_at desc limit 10' }),
+})
+if (r2.ok) {
+  const cols2 = ['auth', 'texts', 'images', 'before_insert']
+  console.log('\nпубликации:\n' + cols2.join('\t'))
+  for (const { publish_timing: t } of await r2.json()) console.log(cols2.map((c) => t?.[c] ?? '').join('\t'))
+}

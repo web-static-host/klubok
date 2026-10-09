@@ -33,7 +33,7 @@ export function Profile({ self }: { self?: boolean }) {
             <Bone className="h-10 w-10 rounded-2xl" />
           </div>
         )}
-        <ProfileHeadSkeleton />
+        <ProfileHeadSkeleton self={self} />
         <div className="mt-5">
           <MasonrySkeleton rows={2} />
         </div>
@@ -45,7 +45,7 @@ export function Profile({ self }: { self?: boolean }) {
       <div className="mx-auto max-w-sm px-3 pt-10 md:pt-16">
         <h1 className="mb-3 text-2xl font-bold">Вход</h1>
         <LoginForm hint="Войдите, чтобы публиковать идеи, сохранять их в папки и отмечать «Я попробовал»." />
-        <ThemeSettings />
+        <ThemeSettings label />
       </div>
     )
 
@@ -68,41 +68,58 @@ export function Profile({ self }: { self?: boolean }) {
           <IconButton icon={ArrowLeft} label="Назад" onClick={() => (window.history.length > 1 ? nav(-1) : nav('/'))} />
         </div>
       )}
-      <section className="fade-up mx-auto flex max-w-xl flex-col items-center text-center">
-        <Avatar user={u} size={88} />
-        <h1 className="mt-3 text-2xl font-bold">{u.name}</h1>
-        <p className="text-sm">@{u.handle}</p>
-        {u.bio && <p className="mt-2 max-w-md text-sm leading-relaxed">{u.bio}</p>}
-        <dl className="mt-4 grid w-full max-w-sm grid-cols-3 gap-2">
+      {/* шапка — в ширину: карточка автора, цифры, кнопка; у себя ниже — настройки. На телефоне — столбиком */}
+      <section className="fade-up flex flex-col gap-2 md:flex-row md:flex-wrap">
+        <div className="card flex min-w-0 items-center gap-3 p-3 md:min-w-[280px] md:flex-1">
+          <Avatar user={u} size={56} />
+          <div className="min-w-0">
+            <h1 className="truncate text-xl leading-7 font-bold">{u.name}</h1>
+            <p className="truncate text-sm">@{u.handle}</p>
+            {u.bio && <p className="mt-1 line-clamp-2 text-sm leading-snug">{u.bio}</p>}
+          </div>
+        </div>
+        <dl className="grid grid-cols-3 gap-2 md:flex">
           {[
             { v: posts.length, l: plural(posts.length, 'публикация', 'публикации', 'публикаций') },
             { v: followers, l: plural(followers, 'подписчик', 'подписчика', 'подписчиков') },
             { v: repeated, l: 'раз повторили' },
           ].map((x) => (
-            <div key={x.l} className="card px-2 py-2.5">
+            <div key={x.l} className="card flex flex-col justify-center px-3 py-2 text-center md:min-w-[120px]">
               <dd className="text-lg leading-6 font-bold">{num(x.v)}</dd>
               <dt className="text-xs">{x.l}</dt>
             </div>
           ))}
         </dl>
-        {mine && (
-          <Button className="mt-4 w-full max-w-sm" kind="neutral" icon={Pencil} onClick={() => setEditing(true)}>
+        {mine ? (
+          <Button kind="neutral" icon={Pencil} onClick={() => setEditing(true)}>
             Изменить профиль
           </Button>
-        )}
-        {!mine && (
-          <Button
-            className="mt-4 w-full max-w-sm"
-            kind={s.follows.includes(u.id) ? 'neutral' : 'primary'}
-            onClick={() => s.toggleFollow(u.id)}
-          >
+        ) : (
+          <Button kind={s.follows.includes(u.id) ? 'neutral' : 'primary'} className="md:min-w-[180px]" onClick={() => s.toggleFollow(u.id)}>
             {s.follows.includes(u.id) ? 'Вы подписаны' : 'Подписаться'}
           </Button>
         )}
-        <div className="mt-5 w-full max-w-sm">
-          <Segmented value={tab} onChange={setTab} options={tabs} />
-        </div>
       </section>
+      {mine && (
+        <section className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-3" aria-label="Настройки">
+          <div className="col-span-2 md:col-span-1">
+            <ThemeSettings />
+          </div>
+          <Link to="/rules" className="card flex min-h-12 items-center justify-between px-4 text-sm font-semibold hover:bg-active">
+            Правила Клубка <ChevronRight size={18} />
+          </Link>
+          <div className="card flex min-h-12 items-center justify-center gap-3 p-1.5 sm:justify-start sm:pl-4">
+            {/* на телефоне почта не помещается — только «Выйти» */}
+            <p className="hidden min-w-0 flex-1 truncate text-sm sm:block">{s.email}</p>
+            <Button kind="neutral" size="sm" icon={LogOut} onClick={() => s.signOut()}>
+              Выйти
+            </Button>
+          </div>
+        </section>
+      )}
+      <div className="mx-auto mt-4 w-full max-w-sm">
+        <Segmented value={tab} onChange={setTab} options={tabs} />
+      </div>
 
       <div className="mt-5">
         {tab === 'posts' &&
@@ -137,31 +154,17 @@ export function Profile({ self }: { self?: boolean }) {
         )}
       </div>
 
-      {mine && (
-        <section className="mx-auto mt-10 max-w-xl px-1">
-          <ThemeSettings />
-          <Link to="/rules" className="card mt-6 flex items-center justify-between px-4 py-3 text-sm font-semibold hover:bg-active">
-            Правила Клубка <ChevronRight size={18} />
-          </Link>
-          <h2 className="section-label mt-6 mb-2">Аккаунт</h2>
-          <div className="card flex items-center gap-3 p-4">
-            <p className="min-w-0 flex-1 truncate text-sm">{s.email}</p>
-            <Button kind="neutral" size="sm" icon={LogOut} onClick={() => s.signOut()}>
-              Выйти
-            </Button>
-          </div>
-        </section>
-      )}
       {mine && editing && <EditProfile onClose={() => setEditing(false)} />}
     </div>
   )
 }
 
-function ThemeSettings() {
+/** Тема: в профиле — без заголовка (в ряду настроек), под формой входа — с заголовком */
+function ThemeSettings({ label }: { label?: boolean }) {
   const s = useStore()
   return (
-    <>
-      <h2 className="section-label mt-6 mb-2">Внешний вид</h2>
+    <div>
+      {label && <h2 className="section-label mt-6 mb-2">Внешний вид</h2>}
       <Segmented<ThemeMode>
         value={s.theme}
         onChange={s.setTheme}
@@ -171,7 +174,7 @@ function ThemeSettings() {
           { id: 'dark', label: 'Тёмная', icon: Moon },
         ]}
       />
-    </>
+    </div>
   )
 }
 

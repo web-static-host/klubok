@@ -117,33 +117,44 @@ export function ChipsSkeleton() {
 }
 
 /** Шапка профиля — та же разметка, что в Profile: аватар, имя, ник, строка «о себе», три счётчика, кнопка, вкладки */
-export function ProfileHeadSkeleton() {
+/** Шапка профиля — та же разметка, что в Profile: карточка автора, цифры, кнопка; у себя — ряд настроек; вкладки */
+export function ProfileHeadSkeleton({ self }: { self?: boolean }) {
   return (
-    <section className="mx-auto flex max-w-xl flex-col items-center text-center" role="status" aria-label="Загрузка">
-      <Bone className="h-[88px] w-[88px] rounded-full" />
-      <h1 className="mt-3 text-2xl font-bold">
-        <Line w="9em" />
-      </h1>
-      <p className="text-sm">
-        <Line w="7em" />
-      </p>
-      <p className="mt-2 max-w-md text-sm leading-relaxed">
-        <Line w="18em" />
-      </p>
-      <div className="mt-4 grid w-full max-w-sm grid-cols-3 gap-2">
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="card px-2 py-2.5">
-            <div className="text-lg leading-6 font-bold">
-              <Line w="2em" />
-            </div>
-            <div className="text-xs">
-              <Line w="6em" />
-            </div>
+    <div role="status" aria-label="Загрузка">
+      <section className="flex flex-col gap-2 md:flex-row md:flex-wrap">
+        <div className="card flex min-w-0 items-center gap-3 p-3 md:min-w-[280px] md:flex-1">
+          <Bone className="h-14 w-14 shrink-0 rounded-full" />
+          <div className="min-w-0">
+            <h1 className="text-xl leading-7 font-bold">
+              <Line w="9em" />
+            </h1>
+            <p className="text-sm">
+              <Line w="7em" />
+            </p>
           </div>
-        ))}
-      </div>
-      <Bone className="mt-4 h-12 w-full max-w-sm rounded-2xl" />
-      <div className="mt-5 w-full max-w-sm">
+        </div>
+        <div className="grid grid-cols-3 gap-2 md:flex">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="card flex flex-col justify-center px-3 py-2 text-center md:min-w-[120px]">
+              <div className="text-lg leading-6 font-bold">
+                <Line w="2em" />
+              </div>
+              <div className="text-xs">
+                <Line w="6em" />
+              </div>
+            </div>
+          ))}
+        </div>
+        <Bone className="min-h-12 rounded-2xl md:w-[200px]" />
+      </section>
+      {self && (
+        <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-3">
+          {[0, 1, 2].map((i) => (
+            <Bone key={i} className={i ? 'h-[50px] rounded-2xl md:h-[52px]' : 'col-span-2 h-[52px] rounded-2xl md:col-span-1'} />
+          ))}
+        </div>
+      )}
+      <div className="mx-auto mt-4 w-full max-w-sm">
         <div className="card grid grid-cols-2 gap-1 p-1">
           {[0, 1].map((i) => (
             <div key={i} className="rounded-xl border border-transparent px-2 py-2.5 text-sm font-semibold">
@@ -152,7 +163,7 @@ export function ProfileHeadSkeleton() {
           ))}
         </div>
       </div>
-    </section>
+    </div>
   )
 }
 

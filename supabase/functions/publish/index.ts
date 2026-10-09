@@ -556,7 +556,8 @@ export async function handle(req: Request): Promise<Response> {
     } catch {
       /* ИИ недоступен — проверка потом сама скажет */
     }
-    return json({ ok: true, cold: wasCold, ms: ms(t) })
+    // boot — сколько копия функции запускалась до этого запроса (мс от старта процесса)
+    return json({ ok: true, cold: wasCold, boot: wasCold ? Math.round(t) : 0, ms: ms(t) })
   }
 
   // проверка имени и ника перед регистрацией (входа ещё нет)
@@ -586,7 +587,10 @@ export async function handle(req: Request): Promise<Response> {
       if (!ownImage(img, uid)) return json({ ok: false, reasons: ['Неверная картинка'] }, 400)
       const tm: Timing = {}
       // первый запрос после простоя: функция только что запустилась («холодный старт»)
-      if (cold) tm.cold = 1
+      if (cold) {
+        tm.cold = 1
+        tm.boot = Math.round(performance.now())
+      }
       cold = false
       const t = performance.now()
       const c = await checkImage(img, uid, body.purpose === 'avatar', tm)

@@ -70,9 +70,12 @@
 - Проверено: все запросы сайта (данные, вход, картинки, функция publish) идут через проброс, напрямую в Supabase — ни одного; загрузка файлов 3 МБ проходит. Инструкция для nginx — `docs/PROXY.md`.
 - В базе адреса картинок хранятся как адреса Supabase; сайт сам подменяет их на проброс (`viaApi` / `canonical` в `src/supabase.ts`).
 
-## Автовыкладка функции publish
-- `.github/workflows/deploy-function.yml`: при изменении `supabase/functions/**` в `main` GitHub сам выкладывает функцию в Supabase (`supabase functions deploy publish --use-api --no-verify-jwt`).
-- Нужен секрет `SUPABASE_ACCESS_TOKEN` в GitHub (ключ доступа Supabase: проект Клубок, право Edge Functions — запись). Без секрета шаг пропускается — выкладывать вручную, как раньше. У ключа есть срок — когда истечёт, создать новый и заменить секрет.
+## Supabase без ручной работы владельца
+- Функция: `.github/workflows/deploy-function.yml` — при изменении `supabase/functions/**` в `main` GitHub сам выкладывает `publish` (`supabase functions deploy publish --use-api --no-verify-jwt`).
+- База: `.github/workflows/migrate.yml` + `.github/scripts/migrate.mjs` — новые файлы `supabase/migrations/NNN_*.sql` запускаются сами, каждый один раз (учёт — `klubok_admin.migrations`, схема не видна сайту). 002–005 при первом запуске отмечаются как сделанные вручную. Обновления писать так, чтобы повторный запуск ничего не ломал (`if not exists`).
+- Обе можно запустить вручную: GitHub → Actions → нужная → Run workflow.
+- Нужен секрет `SUPABASE_ACCESS_TOKEN` в GitHub: ключ доступа Supabase на проект Клубок (Edge Functions и SQL — запись). Без секрета шаги пропускаются. У ключа есть срок — когда истечёт, создать новый и заменить секрет.
+- Репозиторий открытый: журналы GitHub видят все, поэтому в них не печатаются данные из базы.
 
 ## Ускорение загрузки (сделано 8 октября)
 - Лента, авторы и отзывы запрашиваются прямо из `index.html`, параллельно с загрузкой кода сайта; соединение с сервером открывается заранее (preconnect).

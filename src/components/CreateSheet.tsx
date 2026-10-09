@@ -336,6 +336,7 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
         </div>
 
         <div className="flex min-w-0 flex-col gap-4">
+          <p className="section-label -mb-2">Название</p>
           <input
             value={shownTitle}
             onChange={(e) => {
@@ -425,7 +426,7 @@ function CheckTimes({ n, t }: { n: number; t: NonNullable<CheckedImg['times']> }
         ['· вход в ГигаЧат', sec(s.login), true],
         ['· отправить картинку в ГигаЧат', sec(s.upload), true],
         ['· ответ ГигаЧата', `${sec(s.ai)}${s.tokens_out ? ` (написал ${s.tokens_out} ток.)` : ''}`, true],
-        ['· сохранить результат', sec(s.save), true],
+        ['· сохранить результат', s.save === undefined ? 'после ответа' : sec(s.save), true],
         ['· проверка, кто вы (вход на сайт)', sec(s.auth), true],
         ...(s.cold ? ([['· запуск копии функции', sec(s.boot), true]] as [string, string, boolean][]) : []),
         ['· дорога туда и обратно', sec(t.request - (s.total ?? 0) - (s.auth ?? 0) - (s.boot ?? 0)), true],

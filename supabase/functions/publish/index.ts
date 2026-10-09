@@ -271,6 +271,13 @@ interface Verdict {
 }
 
 /** Ответ модели → объект; если модель отказалась отвечать (фильтр GigaChat) — это нарушение */
+/** Доделать после ответа (на сервере Supabase — EdgeRuntime.waitUntil); где этого нет (тесты) — просто дождаться */
+function later(p: PromiseLike<unknown>): Promise<unknown> | undefined {
+  const rt = (globalThis as { EdgeRuntime?: { waitUntil(p: Promise<unknown>): void } }).EdgeRuntime
+  if (!rt?.waitUntil) return Promise.resolve(p)
+  rt.waitUntil(Promise.resolve(p))
+}
+
 /** Замеры проверки, мс (и сколько слов-«токенов» прочитал и написал ИИ): видны на сайте в форме и пишутся в image_checks.timing */
 export type Timing = Record<string, number>
 const ms = (t: number) => Math.round(performance.now() - t)
@@ -341,10 +348,15 @@ async function aiCheckText(text: string, note = ''): Promise<Verdict> {
   )
 }
 
-async function aiCheckImage(src: string, allowPeople = false, tm: Timing = {}): Promise<Verdict> {
-  // скачать картинку и войти в ГигаЧат — одновременно
+interface Prepared {
+  bytes: ArrayBuffer
+  type: string
+  auth: string
+}
+/** Скачать картинку и взять пропуск в ГигаЧат — одновременно (src — только из нашего хранилища) */
+function prepareImage(src: string, tm: Timing): Promise<Prepared> {
   const t0 = performance.now()
-  const [{ bytes, type }, auth] = await Promise.all([
+  return Promise.all([
     fetch(src).then(async (img) => {
       if (!img.ok) throw new Error(`не удалось скачать картинку ${src}`)
       const bytes = await img.arrayBuffer()
@@ -352,8 +364,14 @@ async function aiCheckImage(src: string, allowPeople = false, tm: Timing = {}): 
       return { bytes, type: img.headers.get('content-type') ?? 'image/jpeg' }
     }),
     gcToken().then((a) => ((tm.login = ms(t0)), a)),
-  ])
-  tm.kb = Math.round(bytes.byteLength / 1024)
+  ]).then(([{ bytes, type }, auth]) => {
+    tm.kb = Math.round(bytes.byteLength / 1024)
+    return { bytes, type, auth }
+  })
+}
+
+async function aiCheckImage(src: string, allowPeople = false, tm: Timing = {}, early?: Promise<Prepared>): Promise<Verdict> {
+  const { bytes, type, auth } = await (early ?? prepareImage(src, tm))
   const form = new FormData()
   form.append('file', new Blob([bytes], { type }), 'image.jpg')
   form.append('purpose', 'general')
@@ -439,7 +457,7 @@ interface ImageCheck {
  * Проверка одной картинки: ИИ (правила, «нет людей», текст на ней) + явные ссылки и мат в этом тексте.
  * Результат запоминается в image_checks: картинку проверяют сразу после загрузки, и при публикации ждать не нужно.
  */
-async function checkImage(img: ImgIn, uid: string, allowPeople: boolean, tm: Timing = {}): Promise<ImageCheck> {
+async function checkImage(img: ImgIn, uid: string, allowPeople: boolean, tm: Timing = {}, early?: Promise<Prepared>): Promise<ImageCheck> {
   const path = img.src.slice(PUBLIC_PREFIX.length)
   let t = performance.now()
   const { data: saved } = await admin.from('image_checks').select('*').eq('path', path).maybeSingle()
@@ -450,7 +468,7 @@ async function checkImage(img: ImgIn, uid: string, allowPeople: boolean, tm: Tim
     return { ok: saved.ok, reasons: saved.reasons ?? [], meta: parseMeta(saved.meta), aiText: saved.ai_text ?? '', ai: true, cached: true }
   let res: ImageCheck
   try {
-    const v = await aiCheckImage(img.src, allowPeople, tm)
+    const v = await aiCheckImage(img.src, allowPeople, tm, early)
     const reasons = [...(v.ok ? [] : v.reasons.length ? v.reasons : ['Картинка нарушает правила']), ...imageTextCheck(v.text)]
     res = {
       ok: reasons.length === 0,
@@ -464,7 +482,8 @@ async function checkImage(img: ImgIn, uid: string, allowPeople: boolean, tm: Tim
     return { ok: true, reasons: [], meta: emptyMeta(), aiText: '', ai: false }
   }
   t = performance.now()
-  await admin.from('image_checks').upsert({
+  // сохраняем уже после ответа сайту — человеку ждать незачем
+  await later(admin.from('image_checks').upsert({
     timing: tm,
     path,
     user_id: uid,
@@ -475,8 +494,9 @@ async function checkImage(img: ImgIn, uid: string, allowPeople: boolean, tm: Tim
     meta: res.meta,
     ai_text: res.aiText || null,
     by_ai: true,
-  })
-  tm.save = ms(t)
+  }).then(() => {
+    tm.save = ms(t)
+  }))
   return res
 }
 
@@ -583,6 +603,18 @@ export async function handle(req: Request): Promise<Response> {
     return json(m.ok ? { ok: true } : { ok: false, reasons: m.reasons })
   }
 
+  // проверка картинки: пока выясняем, кто вошёл, уже скачиваем картинку и берём пропуск в ГигаЧат.
+  // Скачиваем только из нашего хранилища; наружу (в ГигаЧат) ничего не уходит, пока вход не проверен.
+  const earlyTm: Timing = {}
+  let early: Promise<Prepared> | undefined
+  if (body.action === 'check-image' && body.img && typeof body.img === 'object') {
+    const src = canon(body.img as ImgIn).src
+    if (typeof src === 'string' && src.startsWith(PUBLIC_PREFIX)) {
+      early = prepareImage(src, earlyTm)
+      early.catch(() => {})
+    }
+  }
+
   const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
   const tAuth = performance.now()
   const { data: auth } = await admin.auth.getUser(jwt)
@@ -599,7 +631,7 @@ export async function handle(req: Request): Promise<Response> {
     case 'check-image': {
       const img = body.img as ImgIn | undefined
       if (!ownImage(img, uid)) return json({ ok: false, reasons: ['Неверная картинка'] }, 400)
-      const tm: Timing = {}
+      const tm: Timing = earlyTm
       // первый запрос после простоя: функция только что запустилась («холодный старт»)
       if (cold) {
         tm.cold = 1
@@ -608,7 +640,8 @@ export async function handle(req: Request): Promise<Response> {
       tm.auth = authMs
       cold = false
       const t = performance.now()
-      const c = await checkImage(img, uid, body.purpose === 'avatar', tm)
+      // картинка из запроса совпадает с той, что начали готовить, — берём готовое
+      const c = await checkImage(img, uid, body.purpose === 'avatar', tm, early)
       tm.total = ms(t)
       if (c.cached) tm.cached = 1
       // topics и title — категории и название, которые ИИ предлагает по этой картинке (форма ставит их сама); timing — замеры (ТЕСТ)

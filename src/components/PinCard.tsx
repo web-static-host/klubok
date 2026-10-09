@@ -1,26 +1,27 @@
 import { useEffect, useRef } from 'react'
-import { Link } from 'react-router-dom'
-import { Bookmark, Check, CircleCheck, CircleX, Images } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { BarChart3, Bookmark, Check, CircleCheck, CircleX, EyeOff, Flag, Images } from 'lucide-react'
 import type { Post } from '../data/types'
 import { useStore } from '../store'
 import { useUi } from '../ui-context'
 import { cx, num } from '../lib'
-import { trackClick, trackView } from '../track'
-import { Avatar, Picture, TopicBadge } from './ui'
+import { trackView, type Source } from '../track'
+import { Avatar, Menu, Picture, TopicBadge } from './ui'
 
 /** Карточка ленты — DESIGN_WEB 3.3 */
-export function PinCard({ post, folderId }: { post: Post; folderId?: string }) {
-  const { user, triesOf, savedIn, folders, toggleDone, me, fresh } = useStore()
-  const { openSave } = useUi()
+/** source — где показана карточка (для статистики автора: откуда приходят) */
+export function PinCard({ post, folderId, source }: { post: Post; folderId?: string; source: Source }) {
+  const { user, savedIn, folders, toggleDone, me, fresh, markNotInterested } = useStore()
+  const { openSave, openReport, toast } = useUi()
+  const nav = useNavigate()
   const author = user(post.authorId)
-  const tries = triesOf(post.id)
-  const okCount = tries.filter((t) => t.ok).length
-  const failCount = tries.length - okCount
+  const okCount = post.triesOk
+  const failCount = post.tries - post.triesOk
   const saved = savedIn(post.id).length > 0
   const folder = folderId ? folders.find((f) => f.id === folderId) : undefined
   const done = folder?.done.includes(post.id)
 
-  // статистика автора: карточку увидели (видна хотя бы наполовину) и открыли. Свои не считаем.
+  // статистика автора: карточку увидели (видна хотя бы наполовину); открытие считает страница идеи. Свои не считаем.
   const mine = post.authorId === me.id
   const box = useRef<HTMLElement>(null)
   useEffect(() => {
@@ -29,15 +30,16 @@ export function PinCard({ post, folderId }: { post: Post; folderId?: string }) {
     const io = new IntersectionObserver(
       ([e]) => {
         if (!e.isIntersecting) return
-        trackView(post.id)
+        trackView(post.id, source)
         io.disconnect()
       },
       { threshold: 0.5 },
     )
     io.observe(el)
     return () => io.disconnect()
-  }, [post.id, mine])
-  const open = () => !mine && trackClick(post.id)
+  }, [post.id, mine, source])
+  // откуда открыли — странице идеи (для статистики автора)
+  const from = { src: source }
 
   return (
     <article ref={box} className="group fade-up min-w-0">
@@ -51,7 +53,7 @@ export function PinCard({ post, folderId }: { post: Post; folderId?: string }) {
       >
         <Link
           to={`/p/${post.id}`}
-          onClick={open}
+          state={from}
           className={cx('block rounded-2xl', post.hidden && 'opacity-50 grayscale')}
           aria-label={post.title}
         >
@@ -141,9 +143,35 @@ export function PinCard({ post, folderId }: { post: Post; folderId?: string }) {
         )}
       </div>
       <div className="px-1 pt-2">
-        <Link to={`/p/${post.id}`} onClick={open} className="line-clamp-2 text-sm leading-5 font-semibold hover:underline">
-          {post.title}
-        </Link>
+        <div className="flex items-start gap-1">
+          <Link to={`/p/${post.id}`} state={from} className="line-clamp-2 min-w-0 flex-1 text-sm leading-5 font-semibold hover:underline">
+            {post.title}
+          </Link>
+          {/* «…»: своё — статистика; чужое — «Не интересно» (в ленте «Для вас») и «Пожаловаться» */}
+          <Menu
+            label="Ещё"
+            className="-mt-1.5 -mr-1.5 shrink-0"
+            items={
+              mine
+                ? [{ label: 'Статистика', icon: BarChart3, onClick: () => nav(`/stats/${post.id}`) }]
+                : [
+                    ...(source === 'home'
+                      ? [
+                          {
+                            label: 'Не интересно',
+                            icon: EyeOff,
+                            onClick: () => {
+                              markNotInterested(post.id)
+                              toast('Больше не покажем — и реже похожие')
+                            },
+                          },
+                        ]
+                      : []),
+                    { label: 'Пожаловаться', icon: Flag, onClick: () => openReport('post', post.id), danger: true },
+                  ]
+            }
+          />
+        </div>
         <div className="mt-1.5 flex items-center gap-1.5">
           <Link to={`/u/${author.id}`} className="flex min-w-0 flex-1 items-center gap-1.5 rounded-full">
             <Avatar user={author} size={20} />

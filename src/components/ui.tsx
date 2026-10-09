@@ -1,5 +1,6 @@
-import { useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
-import { type LucideIcon } from 'lucide-react'
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { MoreHorizontal, type LucideIcon } from 'lucide-react'
 import type { Img, Topic, User } from '../data/types'
 import { topicLabel } from '../data/types'
 import { THUMB_W, cx, imgSrc, localCopy } from '../lib'
@@ -249,5 +250,96 @@ export function Toggle({
         />
       </span>
     </label>
+  )
+}
+
+/** Меню «…»: список действий во всплывающей панели поверх страницы (не прячется под соседними карточками);
+ * закрывается кликом мимо, клавишей Esc и прокруткой страницы */
+export function Menu({
+  label,
+  items,
+  className,
+}: {
+  label: string
+  items: { label: string; icon: LucideIcon; onClick: () => void; danger?: boolean }[]
+  className?: string
+}) {
+  const [pos, setPos] = useState<{ top?: number; bottom?: number; right: number } | null>(null)
+  const btn = useRef<HTMLButtonElement>(null)
+  const panel = useRef<HTMLDivElement>(null)
+  const open = !!pos
+  useEffect(() => {
+    if (!open) return
+    const close = () => setPos(null)
+    const out = (e: PointerEvent) => !panel.current?.contains(e.target as Node) && !btn.current?.contains(e.target as Node) && close()
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && close()
+    // прокрутили заметно — меню уже не у своей кнопки; мелкие сдвиги (догрузились картинки) не закрывают
+    const y0 = window.scrollY
+    const onScroll = () => Math.abs(window.scrollY - y0) > 40 && close()
+    document.addEventListener('pointerdown', out)
+    document.addEventListener('keydown', esc)
+    window.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('resize', close)
+    return () => {
+      document.removeEventListener('pointerdown', out)
+      document.removeEventListener('keydown', esc)
+      window.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', close)
+    }
+  }, [open])
+  const toggle = () => {
+    if (open) return setPos(null)
+    const r = btn.current!.getBoundingClientRect()
+    const right = Math.max(8, window.innerWidth - r.right)
+    // у нижнего края экрана — вверх
+    setPos(
+      window.innerHeight - r.bottom < 56 * items.length + 24
+        ? { bottom: window.innerHeight - r.top + 4, right }
+        : { top: r.bottom + 4, right },
+    )
+  }
+  return (
+    <div className={cx('relative', className)}>
+      <button
+        ref={btn}
+        type="button"
+        aria-label={label}
+        title={label}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          toggle()
+        }}
+        className="press inline-flex h-8 w-8 items-center justify-center rounded-xl hover:bg-active"
+      >
+        <MoreHorizontal size={18} />
+      </button>
+      {pos &&
+        createPortal(
+          <div ref={panel} role="menu" className="scale-in glass-strong fixed z-[70] min-w-[200px] rounded-2xl p-1 shadow-lg" style={pos}>
+            {items.map((it) => (
+              <button
+                key={it.label}
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setPos(null)
+                  it.onClick()
+                }}
+                className={cx(
+                  'press flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-semibold hover:bg-active',
+                  it.danger && 'text-rose-500',
+                )}
+              >
+                <it.icon size={17} strokeWidth={2} />
+                {it.label}
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
+    </div>
   )
 }

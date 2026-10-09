@@ -88,7 +88,8 @@ export const users: User[] = [
   },
 ]
 
-export const posts: Post[] = [
+// счётчики «Я попробовал» считает база (tries_count) — в тестовых данных их нет
+export const posts: Omit<Post, 'tries' | 'triesOk'>[] = [
   {
     id: 'p1',
     type: 'photo',

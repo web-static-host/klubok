@@ -12,7 +12,18 @@ const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v))
  * «До и после»: первый слайд — две первые картинки рядом, дальше листаются остальные (как сделали).
  * Картинки с содержимым не обрезаются (на них текст), нажатие — просмотр на весь экран с увеличением.
  */
-export function Gallery({ post, maxRatio = 1.6, className }: { post: Post; maxRatio?: number; className?: string }) {
+/** onSeen — показали картинку №… (с 1): для статистики автора «до какой картинки долистали» */
+export function Gallery({
+  post,
+  maxRatio = 1.6,
+  className,
+  onSeen,
+}: {
+  post: Post
+  maxRatio?: number
+  className?: string
+  onSeen?: (n: number) => void
+}) {
   const [open, setOpen] = useState<number | null>(null)
   const [index, setIndex] = useState(0)
   const strip = useRef<HTMLDivElement>(null)
@@ -36,7 +47,11 @@ export function Gallery({ post, maxRatio = 1.6, className }: { post: Post; maxRa
     <div className={cx('relative', className)}>
       <div
         ref={strip}
-        onScroll={(e) => setIndex(Math.round(e.currentTarget.scrollLeft / e.currentTarget.clientWidth))}
+        onScroll={(e) => {
+          const k = Math.round(e.currentTarget.scrollLeft / e.currentTarget.clientWidth)
+          setIndex(k)
+          if (slides[k]) onSeen?.(Math.max(...slides[k]) + 1)
+        }}
         className="no-scrollbar flex snap-x snap-mandatory overflow-x-auto rounded-2xl"
       >
         {slides.map((slide, k) =>
@@ -85,7 +100,7 @@ export function Gallery({ post, maxRatio = 1.6, className }: { post: Post; maxRa
           {index < slides.length - 1 && <Arrow dir={1} onClick={() => go(index + 1)} />}
         </>
       )}
-      {open !== null && <Lightbox images={imgs} start={open} title={post.title} onClose={() => setOpen(null)} />}
+      {open !== null && <Lightbox images={imgs} start={open} title={post.title} onClose={() => setOpen(null)} onSeen={onSeen} />}
     </div>
   )
 }
@@ -109,8 +124,27 @@ function Arrow({ dir, onClick, dark }: { dir: 1 | -1; onClick: () => void; dark?
 }
 
 /** Просмотр на весь экран: листать — свайпом или стрелками, увеличивать — двумя пальцами, колёсиком или двойным нажатием */
-function Lightbox({ images, start, title, onClose }: { images: Img[]; start: number; title: string; onClose: () => void }) {
+function Lightbox({
+  images,
+  start,
+  title,
+  onClose,
+  onSeen,
+}: {
+  images: Img[]
+  start: number
+  title: string
+  onClose: () => void
+  onSeen?: (n: number) => void
+}) {
   const [i, setI] = useState(start)
+  const seen = useRef(onSeen)
+  useEffect(() => {
+    seen.current = onSeen
+  })
+  useEffect(() => {
+    seen.current?.(i + 1)
+  }, [i])
   const go = (d: 1 | -1) => setI((x) => clamp(x + d, 0, images.length - 1))
 
   useEffect(() => {

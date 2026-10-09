@@ -1,11 +1,31 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Camera, Loader2, ChevronRight, ImageOff, LogOut, Monitor, Moon, Pencil, Settings, Sun } from 'lucide-react'
-import { useStore, type ThemeMode } from '../store'
+import {
+  ArrowLeft,
+  BarChart3,
+  Bell,
+  Camera,
+  Flag,
+  Loader2,
+  ChevronRight,
+  ImageOff,
+  LogOut,
+  Monitor,
+  Moon,
+  Pencil,
+  Settings,
+  Sun,
+  UserX,
+} from 'lucide-react'
+import { useStore, type PostRow, type ProfileRow, type ThemeMode } from '../store'
 import { num, plural } from '../lib'
+import { accessToken, restGet } from '../supabase'
+import { trackProfile } from '../track'
+import { useUi } from '../ui-context'
 import type { Img } from '../data/types'
 import { Masonry } from '../components/Masonry'
-import { Avatar, Button, Empty, IconButton, Segmented } from '../components/ui'
+import { Avatar, Button, Empty, IconButton, Menu, Segmented } from '../components/ui'
+import { MoreLoader, usePaged } from '../components/Paged'
 import { Sheet } from '../components/Sheet'
 import { LoginForm } from '../components/LoginSheet'
 import { AvatarCropper } from '../components/AvatarCropper'
@@ -19,14 +39,68 @@ export function Profile({ self }: { self?: boolean }) {
   const { id = '' } = useParams()
   const nav = useNavigate()
   const s = useStore()
-  const u = self ? s.me : s.user(id)
-  const mine = s.authed && u.id === s.me.id
+  const { openReport } = useUi()
+  const uid = self ? s.me.id : id
+  const u = s.user(uid)
+  const mine = s.authed && uid === s.me.id
   const [tab, setTab] = useState<Tab>('posts')
   // окно профиля: 'profile' — только данные профиля (компьютер), 'all' — профиль и настройки (телефон, шестерёнка)
   const [editing, setEditing] = useState<false | 'profile' | 'all'>(false)
 
-  // ещё не знаем, вошёл ли человек, или нет данных — заглушка в разметке профиля (а не форма входа и не «никого»)
-  if ((self && !s.authReady) || !s.loaded)
+  // профиль — свежий из базы (подписчики, фото); нет такого — «никого»
+  const [missing, setMissing] = useState(false)
+  const { addUserRows } = s
+  useEffect(() => {
+    if (!uid) return
+    setMissing(false)
+    let live = true
+    restGet<ProfileRow[]>(`profiles?select=*&id=eq.${uid}`)
+      .then((rows) => {
+        if (!live) return
+        addUserRows(rows)
+        if (!rows.length) setMissing(true)
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [uid, addUserRows])
+  // статистика автора: зашли в профиль (свой не считается)
+  useEffect(() => {
+    if (uid && !mine && s.authReady) trackProfile(uid)
+  }, [uid, mine, s.authReady])
+
+  // цифры: публикаций (у себя — со скрытыми) и сколько раз повторили идеи автора
+  const [summary, setSummary] = useState<{ posts: number; repeated: number } | null>(null)
+  useEffect(() => {
+    if (!uid || !s.authReady) return
+    let live = true
+    ;(async () =>
+      restGet<{ posts: number; repeated: number }>(`rpc/profile_summary?p_user=${uid}`, mine ? await accessToken() : undefined))()
+      .then((x) => live && setSummary(x))
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [uid, mine, s.authReady])
+
+  const own = usePaged(
+    `profile:${uid}`,
+    async (offset, limit) =>
+      restGet<PostRow[]>(
+        `posts?select=*&author_id=eq.${uid}${mine ? '' : '&hidden=is.false'}&order=created_at.desc&offset=${offset}&limit=${limit}`,
+        mine ? await accessToken() : undefined,
+      ),
+    { enabled: !!uid && s.authReady, refresh: true },
+  )
+  const tried = usePaged(
+    `tried:${uid}`,
+    (offset, limit) => restGet<PostRow[]>(`rpc/tried_posts?p_user=${uid}&p_offset=${offset}&p_limit=${limit}`),
+    { enabled: !!uid && tab === 'tried' },
+  )
+
+  // ещё не знаем, вошёл ли человек, или нет профиля — заглушка в разметке профиля (а не форма входа и не «никого»)
+  if ((self && !s.authReady) || (uid && !s.hasUser(uid) && !missing))
     return (
       <div className="px-2 pt-2 sm:px-3 md:px-4 lg:px-6">
         <ProfileHeadSkeleton self={self} />
@@ -44,13 +118,12 @@ export function Profile({ self }: { self?: boolean }) {
         <ThemeSettings label />
       </div>
     )
+  if (missing) return <Empty icon={UserX}>Такого профиля нет.</Empty>
 
-  const posts = s.posts.filter((p) => p.authorId === u.id).sort((a, b) => b.createdAt - a.createdAt)
-  const triedIds = [...new Set(s.tries.filter((t) => t.userId === u.id).map((t) => t.postId))]
-  const triedPosts = triedIds.map((pid) => s.post(pid)).filter((p) => !!p)
-  const repeated = s.tries.filter((t) => posts.some((p) => p.id === t.postId)).length
+  const posts = own.posts.filter((p) => mine || !p.hidden)
   const followers = u.followers
   const back = () => (window.history.length > 1 ? nav(-1) : nav('/'))
+  const count = summary?.posts ?? posts.length
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'posts', label: 'Публикации' },
@@ -60,7 +133,7 @@ export function Profile({ self }: { self?: boolean }) {
 
   return (
     <div className="px-2 pt-2 sm:px-3 md:px-4 lg:px-6">
-      {/* шапка — в ширину: карточка автора (с кнопкой «Изменить профиль» / «Подписаться»), цифры; у себя ниже — настройки. На телефоне — столбиком */}
+      {/* шапка — в ширину: карточка автора (с кнопками), цифры; у себя ниже — настройки. На телефоне — столбиком */}
       <div className="relative">
         {/* «Назад» — не отдельной строкой: на широком экране слева от шапки, на узком — в карточке автора */}
         <IconButton icon={ArrowLeft} label="Назад" className="absolute top-0 left-0 max-xl:hidden" onClick={back} />
@@ -84,18 +157,25 @@ export function Profile({ self }: { self?: boolean }) {
                     Выйти
                   </Button>
                 </div>
-                {/* телефон: шестерёнка — профиль, тема, правила и выход в одном окне */}
-                <IconButton icon={Settings} label="Профиль и настройки" className="ml-1 md:hidden" onClick={() => setEditing('all')} />
+                {/* телефон: статистика и шестерёнка — профиль, тема, уведомления, правила и выход в одном окне */}
+                <IconButton icon={BarChart3} label="Статистика" className="ml-1 md:hidden" onClick={() => nav('/stats')} />
+                <IconButton icon={Settings} label="Профиль и настройки" className="md:hidden" onClick={() => setEditing('all')} />
               </>
             ) : (
-              <Button
-                kind={s.follows.includes(u.id) ? 'neutral' : 'primary'}
-                size="sm"
-                className="ml-1 shrink-0 max-md:hidden"
-                onClick={() => s.toggleFollow(u.id)}
-              >
-                {s.follows.includes(u.id) ? 'Вы подписаны' : 'Подписаться'}
-              </Button>
+              <>
+                <Button
+                  kind={s.follows.includes(u.id) ? 'neutral' : 'primary'}
+                  size="sm"
+                  className="ml-1 shrink-0 max-md:hidden"
+                  onClick={() => s.toggleFollow(u.id)}
+                >
+                  {s.follows.includes(u.id) ? 'Вы подписаны' : 'Подписаться'}
+                </Button>
+                <Menu
+                  label="Ещё"
+                  items={[{ label: 'Пожаловаться', icon: Flag, danger: true, onClick: () => openReport('profile', u.id) }]}
+                />
+              </>
             )}
           </div>
           {/* телефон: «Подписаться» — под карточкой во всю ширину, чтобы не обрезать имя */}
@@ -106,15 +186,25 @@ export function Profile({ self }: { self?: boolean }) {
           )}
           <dl className="grid grid-cols-3 gap-2 md:flex">
             {[
-              { v: posts.length, l: plural(posts.length, 'публикация', 'публикации', 'публикаций') },
+              { v: count, l: plural(count, 'публикация', 'публикации', 'публикаций') },
               { v: followers, l: plural(followers, 'подписчик', 'подписчика', 'подписчиков') },
-              { v: repeated, l: 'раз повторили' },
+              { v: summary?.repeated ?? 0, l: 'раз повторили' },
             ].map((x) => (
               <div key={x.l} className="card flex flex-col justify-center px-3 py-2 text-center md:min-w-[120px]">
                 <dd className="text-lg leading-6 font-bold">{num(x.v)}</dd>
                 <dt className="text-xs">{x.l}</dt>
               </div>
             ))}
+            {/* у себя на компьютере — подробная статистика */}
+            {mine && (
+              <Link
+                to="/stats"
+                className="card flex flex-col items-center justify-center gap-0.5 px-3 py-2 text-center hover:bg-active max-md:hidden md:min-w-[120px]"
+              >
+                <BarChart3 size={20} className="text-accent" />
+                <span className="text-xs font-semibold">Статистика</span>
+              </Link>
+            )}
           </dl>
         </section>
         {/* у себя на компьютере — тема и правила сразу под шапкой (на телефоне — в окне за шестерёнкой) */}
@@ -131,16 +221,26 @@ export function Profile({ self }: { self?: boolean }) {
 
       <div className="mt-2">
         {tab === 'posts' &&
-          (posts.length ? (
-            <Masonry posts={posts} />
+          (!own.list?.loaded ? (
+            <MasonrySkeleton rows={2} />
+          ) : posts.length ? (
+            <>
+              <Masonry posts={posts} source="profile" />
+              <MoreLoader list={own.list} onMore={own.more} onRetry={own.retry} />
+            </>
           ) : (
             <Empty icon={ImageOff}>
               {mine ? 'Вы ещё ничего не публиковали. Нажмите «Создать» и поделитесь своей идеей.' : 'Публикаций пока нет.'}
             </Empty>
           ))}
         {tab === 'tried' &&
-          (triedPosts.length ? (
-            <Masonry posts={triedPosts} />
+          (!tried.list?.loaded ? (
+            <MasonrySkeleton rows={2} />
+          ) : tried.posts.length ? (
+            <>
+              <Masonry posts={tried.posts} source="profile" />
+              <MoreLoader list={tried.list} onMore={tried.more} onRetry={tried.retry} />
+            </>
           ) : (
             <Empty icon={ImageOff}>Здесь появятся идеи, которые {mine ? 'вы повторили' : 'повторил автор'}.</Empty>
           ))}
@@ -318,6 +418,16 @@ function EditProfile({ onClose, withSettings }: { onClose: () => void; withSetti
       {withSettings && (
         <div className="mt-2 flex flex-col gap-3">
           <ThemeSettings label />
+          <Link
+            to="/notifications?settings=1"
+            onClick={onClose}
+            className="card flex min-h-12 items-center justify-between gap-4 px-4 text-sm font-semibold hover:bg-active"
+          >
+            <span className="inline-flex items-center gap-2">
+              <Bell size={18} /> Уведомления
+            </span>
+            <ChevronRight size={18} />
+          </Link>
           <RulesLink />
           <Button kind="neutral" icon={LogOut} onClick={() => signOut()}>
             Выйти

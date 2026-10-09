@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Bookmark, ChefHat, CircleCheck, Link2, SearchX, ThumbsDown, ThumbsUp, Trash2 } from 'lucide-react'
-import type { AiMeta, Post, Try } from '../data/types'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { ArrowLeft, BarChart3, Bookmark, ChefHat, CircleCheck, Flag, Link2, SearchX, ThumbsDown, ThumbsUp, Trash2 } from 'lucide-react'
+import type { AiMeta, Try } from '../data/types'
 import { topicLabel } from '../data/types'
-import { Rejected, useStore } from '../store'
+import { Rejected, useStore, type PostRow } from '../store'
+import { accessToken, restGet } from '../supabase'
+import { trackFollowFromPost, trackLeave, trackOpen, trackShare, type Source } from '../track'
+import { MoreLoader, usePaged } from '../components/Paged'
 import { useUi } from '../ui-context'
 import { cx, num, plural, timeAgo } from '../lib'
 import { Masonry } from '../components/Masonry'
 import { Gallery } from '../components/Gallery'
 import { Sheet } from '../components/Sheet'
-import { PostSkeleton } from '../components/Skeleton'
+import { Bone, PostSkeleton } from '../components/Skeleton'
 import { Avatar, Button, Empty, IconButton, Picture } from '../components/ui'
 
 /** Сколько отзывов видно сразу; остальные — по кнопке */
@@ -19,17 +22,79 @@ export function PostPage() {
   const { id = '' } = useParams()
   const [params] = useSearchParams()
   const nav = useNavigate()
-  const { post, user, triesOf, toggleFollow, follows, savedIn, posts, me, deletePost, loaded } = useStore()
-  const { openSave, openTried, toast } = useUi()
+  const { post, user, triesOf, loadTries, toggleFollow, follows, savedIn, me, deletePost, authReady, addPostRows } = useStore()
+  const { openSave, openTried, toast, openReport } = useUi()
+  const loc = useLocation()
   const [allTries, setAllTries] = useState(false)
   const [askDelete, setAskDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteErr, setDeleteErr] = useState('')
   // ТЕСТ: показать, что увидел ИИ; убрать после тестов
   const [showAi, setShowAi] = useState(false)
-  const [showStats, setShowStats] = useState(false)
   const triesRef = useRef<HTMLElement>(null)
   const p = post(id)
+  const mine = !!p && p.authorId === me.id
+
+  // идеи нет среди загруженных (открыли по ссылке) — берём из базы; свою скрытую — с пропуском автора
+  const [missing, setMissing] = useState(false)
+  useEffect(() => {
+    setMissing(false)
+    if (post(id) || !authReady) return
+    let live = true
+    ;(async () => restGet<PostRow[]>(`posts?select=*&id=eq.${id}`, await accessToken()))()
+      .then((rows) => {
+        if (!live) return
+        if (rows.length) addPostRows(rows)
+        else setMissing(true)
+      })
+      .catch(() => live && setMissing(true))
+    return () => {
+      live = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, authReady])
+
+  // отзывы и ответы — только к открытой идее
+  useEffect(() => {
+    if (p) loadTries(p.id)
+  }, [p?.id, loadTries]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // статистика автора: открыли идею (откуда), сколько секунд смотрели (только пока вкладка видна) и до какой картинки долистали
+  const src: Source = (loc.state as { src?: Source } | null)?.src ?? 'link'
+  const maxSeen = useRef(1)
+  const pid = p?.id
+  useEffect(() => {
+    if (!pid || !authReady || mine) return
+    trackOpen(pid, src)
+    maxSeen.current = 1
+    let since = document.visibilityState === 'visible' ? Date.now() : 0
+    let total = 0
+    const flush = () => {
+      if (since) total += Date.now() - since
+      since = 0
+      trackLeave(pid, total / 1000, maxSeen.current)
+      total = 0
+    }
+    // вкладку спрятали или закрыли — отправляем сразу (после этого страница может уже не закрыться «по-хорошему»)
+    const onVis = () => (document.visibilityState === 'hidden' ? flush() : (since = Date.now()))
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      document.removeEventListener('visibilitychange', onVis)
+      flush()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pid, authReady, mine])
+
+  // «Ещё идеи»: с общими категориями, сначала — чаще сохраняемые; порциями
+  const topicsList = p ? `{${p.topics.map((t) => `"${t.replace(/["\\]/g, '')}"`).join(',')}}` : '{}'
+  const more = usePaged(
+    `more:${id}`,
+    (offset, limit) =>
+      restGet<PostRow[]>(
+        `posts?select=*&topics=ov.${encodeURIComponent(topicsList)}&id=neq.${id}&hidden=is.false&order=saves_count.desc,created_at.desc&offset=${offset}&limit=${limit}`,
+      ),
+    { enabled: !!p },
+  )
 
   useEffect(() => {
     window.scrollTo(0, 0)
@@ -38,28 +103,29 @@ export function PostPage() {
     if (params.get('tab') === 'tries') triesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [params, id])
 
-  if (!p) return loaded ? <Empty icon={SearchX}>Такой идеи нет или её удалили.</Empty> : <PostSkeleton />
+  if (!p) return missing ? <Empty icon={SearchX}>Такой идеи нет или её удалили.</Empty> : <PostSkeleton />
   // скрытую видит только автор
   if (p.hidden && p.authorId !== me.id) return <Empty icon={SearchX}>Такой идеи нет или её удалили.</Empty>
 
   const a = user(p.authorId)
-  const tries = triesOf(p.id)
-  const ok = tries.filter((t) => t.ok).length
-  const pct = tries.length ? Math.round((ok / tries.length) * 100) : 0
+  const loadedTries = triesOf(p.id)
+  const tries = loadedTries ?? []
+  const total = loadedTries ? tries.length : p.tries
+  const ok = loadedTries ? tries.filter((t) => t.ok).length : p.triesOk
+  const pct = total ? Math.round((ok / total) * 100) : 0
   const photos = tries.filter((t) => t.img)
   const saved = savedIn(p.id)
-  const isMine = p.authorId === me.id
-  // похожие: есть общая категория, сначала — у кого общих больше
-  const more = posts
-    .filter((x) => x.id !== p.id && !x.hidden && x.topics.some((t) => p.topics.includes(t)))
-    .map((x) => ({ x, n: x.topics.filter((t) => p.topics.includes(t)).length }))
-    .sort((a, b) => b.n - a.n)
-    .map(({ x }) => x)
-    .slice(0, 12)
+  const isMine = mine
+  const morePosts = more.posts.filter((x) => x.id !== p.id && !x.hidden)
+  const follow = () => {
+    if (!follows.includes(p.authorId)) trackFollowFromPost(p.id)
+    toggleFollow(p.authorId)
+  }
   const shown = allTries || params.get('tab') === 'tries' ? tries : tries.slice(0, FIRST_TRIES)
 
   const share = async () => {
     const url = window.location.href
+    if (!isMine) trackShare(p.id)
     try {
       if (navigator.share) await navigator.share({ title: p.title, url })
       else {
@@ -106,7 +172,7 @@ export function PostPage() {
           {/* картинки — в них вся идея */}
           {/* «Назад» — слева от картинки, вплотную (место под неё — отступ страницы); на телефоне места нет — поверх картинки слева сверху */}
           <div className="relative md:sticky md:top-20 md:self-start">
-            <Gallery key={p.id} post={p} />
+            <Gallery key={p.id} post={p} onSeen={(n) => (maxSeen.current = Math.max(maxSeen.current, n))} />
             <IconButton
               icon={ArrowLeft}
               label="Назад"
@@ -143,20 +209,12 @@ export function PostPage() {
                 >
                   Теги ИИ (тест)
                 </button>
-                {/* ТЕСТ: кнопка «Статистика» — в финале это увидит только автор, в своей статистике */}
-                <button
-                  type="button"
-                  onClick={() => setShowStats((v) => !v)}
-                  aria-expanded={showStats}
-                  className="press rounded-full border border-dashed border-line-strong px-2.5 py-1 text-xs font-semibold hover:bg-active"
-                >
-                  Статистика (тест)
-                </button>
               </div>
+              {isMine && <IconButton icon={BarChart3} label="Статистика идеи" onClick={() => nav(`/stats/${p.id}`)} />}
               {isMine && <IconButton icon={Trash2} label="Удалить идею" onClick={() => setAskDelete(true)} />}
+              {!isMine && <IconButton icon={Flag} label="Пожаловаться" onClick={() => openReport('post', p.id)} />}
               <IconButton icon={Link2} label="Поделиться" onClick={share} />
             </div>
-            {showStats && <StatsView p={p} ok={ok} fail={tries.length - ok} />}
             {showAi && (
               <div className="card mb-3 p-3 text-xs leading-relaxed">
                 <p className="font-semibold">{p.ai?.checked ? 'Проверено ИИ' : 'ИИ не проверял (тестовый пост или ИИ был недоступен)'}</p>
@@ -194,7 +252,7 @@ export function PostPage() {
                 </span>
               </div>
               {!isMine && (
-                <Button size="sm" kind={follows.includes(a.id) ? 'neutral' : 'secondary'} onClick={() => toggleFollow(a.id)}>
+                <Button size="sm" kind={follows.includes(a.id) ? 'neutral' : 'secondary'} onClick={follow}>
                   {follows.includes(a.id) ? 'Вы подписаны' : 'Подписаться'}
                 </Button>
               )}
@@ -225,9 +283,14 @@ export function PostPage() {
             {/* повторили */}
             <section ref={triesRef} className="mt-8 scroll-mt-20" aria-labelledby="tries-h">
               <h2 id="tries-h" className="section-label mb-2">
-                Повторили · {tries.length}
+                Повторили · {total}
               </h2>
-              {tries.length === 0 ? (
+              {!loadedTries ? (
+                <div className="flex flex-col gap-2" role="status" aria-label="Загрузка отзывов">
+                  <Bone className="h-[76px] rounded-2xl" />
+                  {total > 0 && <Bone className="h-[76px] rounded-2xl" />}
+                </div>
+              ) : tries.length === 0 ? (
                 <div className="card flex items-center gap-3 p-4">
                   <ChefHat size={28} strokeWidth={1.6} />
                   <p className="text-sm leading-relaxed">
@@ -297,12 +360,13 @@ export function PostPage() {
       </div>
       <div className="h-16 md:hidden" aria-hidden />
 
-      {more.length > 0 && (
+      {morePosts.length > 0 && (
         <section className="mt-10 px-2 sm:px-3 md:px-4 lg:px-6" aria-labelledby="more-h">
           <h2 id="more-h" className="mb-3 px-1 text-lg font-bold md:text-center">
             Ещё идеи
           </h2>
-          <Masonry posts={more} />
+          <Masonry posts={morePosts} source="more" />
+          <MoreLoader list={more.list} onMore={more.more} onRetry={more.retry} />
         </section>
       )}
 
@@ -331,6 +395,7 @@ export function PostPage() {
 /** Отзыв «Я попробовал» и ответы на него. Отвечать может любой, у автора поста — метка «автор» */
 function TryItem({ t, authorId }: { t: Try; authorId: string }) {
   const { user, me, repliesOf, addReply, authed, setLoginOpen } = useStore()
+  const { openReport } = useUi()
   const replies = repliesOf(t.id)
   const [open, setOpen] = useState(false)
   const [writing, setWriting] = useState(false)
@@ -391,6 +456,11 @@ function TryItem({ t, authorId }: { t: Try; authorId: string }) {
                 {open ? 'Скрыть ответы' : `${replies.length} ${plural(replies.length, 'ответ', 'ответа', 'ответов')}`}
               </button>
             )}
+            {t.userId !== me.id && (
+              <button type="button" className="press ml-auto text-muted hover:underline" onClick={() => openReport('try', t.id)}>
+                Пожаловаться
+              </button>
+            )}
           </div>
         </div>
         {t.img && <Picture img={{ ...t.img, ratio: 1 }} w={200} className="h-16 w-16 shrink-0 rounded-xl" />}
@@ -412,6 +482,17 @@ function TryItem({ t, authorId }: { t: Try; authorId: string }) {
                     </Link>
                     {r.userId === authorId && <span className="rounded-full border chip-on px-1.5 text-[10px] font-bold">автор</span>}
                     <span className="text-[11px]">{timeAgo(r.createdAt)}</span>
+                    {r.userId !== me.id && (
+                      <button
+                        type="button"
+                        aria-label="Пожаловаться на ответ"
+                        title="Пожаловаться"
+                        className="press ml-auto inline-flex h-6 w-6 items-center justify-center rounded-lg text-muted hover:bg-active"
+                        onClick={() => openReport('reply', r.id)}
+                      >
+                        <Flag size={13} />
+                      </button>
+                    )}
                   </div>
                   <p className="text-sm leading-relaxed">{r.text}</p>
                 </div>
@@ -502,31 +583,5 @@ function AiMetaView({ m }: { m: AiMeta }) {
         )
       })}
     </dl>
-  )
-}
-
-// ТЕСТ: сырая статистика поста — убрать вместе с кнопкой «Статистика (тест)»
-function StatsView({ p, ok, fail }: { p: Post; ok: number; fail: number }) {
-  const views = p.stats?.views ?? 0
-  const clicks = p.stats?.clicks ?? 0
-  const rows: [string, string][] = [
-    ['Показы в ленте', num(views)],
-    ['Клики (открыли из ленты)', num(clicks)],
-    ['Доля кликов', views ? `${Math.round((clicks / views) * 1000) / 10}%` : '—'],
-    ['В избранном', num(p.saves)],
-    ['Получилось / не получилось', `${ok} / ${fail}`],
-  ]
-  return (
-    <div className="card mb-3 p-3 text-xs leading-relaxed">
-      <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1">
-        {rows.map(([k, v]) => (
-          <div key={k} className="contents">
-            <dt className="text-muted">{k}</dt>
-            <dd className="text-right font-semibold">{v}</dd>
-          </div>
-        ))}
-      </dl>
-      <p className="mt-2 text-muted">Свои показы и клики не считаются. Одна вкладка — один показ и один клик на пост.</p>
-    </div>
   )
 }

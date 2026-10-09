@@ -119,10 +119,12 @@ export function Folders() {
 
 export function FolderPage() {
   const { id = '' } = useParams()
-  const { folders, post, mineReady, loaded } = useStore()
+  const { folders, post, mineReady } = useStore()
   const nav = useNavigate()
   const f = folders.find((x) => x.id === id)
-  if (!f && (!mineReady || !loaded))
+  // идеи папки подгружает хранилище (по списку сохранённого); пока нет ни одной — заглушка
+  const list = f ? f.postIds.map((pid) => post(pid)).filter((p) => !!p) : []
+  if ((!f && !mineReady) || (f && f.postIds.length > 0 && !list.length))
     return (
       <div className="px-2 pt-3 sm:px-3 md:px-4 md:pt-6 lg:px-6" role="status" aria-label="Загрузка">
         <div className="mb-4 flex items-center gap-3 px-1">
@@ -136,7 +138,6 @@ export function FolderPage() {
       </div>
     )
   if (!f) return <Empty icon={SearchX}>Папка не найдена.</Empty>
-  const list = f.postIds.map((pid) => post(pid)).filter((p) => !!p)
   return (
     <div className="px-2 pt-3 sm:px-3 md:px-4 md:pt-6 lg:px-6">
       <div className="mb-4 flex items-center gap-3 px-1">
@@ -149,7 +150,7 @@ export function FolderPage() {
         </div>
       </div>
       {list.length ? (
-        <Masonry posts={list} folderId={f.id} />
+        <Masonry posts={list} folderId={f.id} source="folder" />
       ) : (
         <Empty icon={FolderIcon}>Папка пустая. Сохраняйте сюда идеи из ленты.</Empty>
       )}

@@ -19,6 +19,9 @@
   --glow-br: rgba(6, 182, 212, 0.06);
   --input: #ffffff;
   --scrim: rgba(0, 0, 0, 0.4);
+  /* столбики графиков статистики (проверено на контраст с карточкой: светлая — #fff, тёмная — #0f1b23) */
+  --chart: #0891b2;
+  --chart-grid: rgba(15, 23, 42, 0.08);
   color-scheme: light;
 }
 [data-theme='dark'] {
@@ -36,6 +39,8 @@
   --glow-br: rgba(6, 182, 212, 0.08);
   --input: #1a2530;
   --scrim: rgba(0, 0, 0, 0.55);
+  --chart: #11a89a;
+  --chart-grid: rgba(255, 255, 255, 0.08);
   color-scheme: dark;
 }
 
@@ -52,6 +57,8 @@
   --color-line: var(--border);
   --color-line-strong: var(--border-strong);
   --color-input: var(--input);
+  --color-chart: var(--chart);
+  --color-chart-grid: var(--chart-grid);
   --color-accent: #14b8a6;
   --color-accent-dark: #0891b2;
   --color-danger: #ef4444;

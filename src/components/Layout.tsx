@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { Folder, LogIn, Plus, RotateCcw, Search, Sparkles, User as UserIcon, Users, WifiOff, type LucideIcon } from 'lucide-react'
+import { Bell, Folder, LogIn, Plus, Search, Sparkles, User as UserIcon, Users, type LucideIcon } from 'lucide-react'
 import { useStore } from '../store'
 import { useUi } from '../ui-context'
 import { cx } from '../lib'
-import { Avatar, Button, Empty, Logo } from './ui'
+import { Avatar, Button, Logo } from './ui'
 import { Bone } from './Skeleton'
 
 const TABS: { to: string; label: string; icon: LucideIcon; end?: boolean }[] = [
@@ -39,9 +39,35 @@ function SearchBox({ className }: { className?: string }) {
   )
 }
 
+/** Колокольчик: уведомления, число непрочитанных */
+function NoticeBell({ className }: { className?: string }) {
+  const { unread } = useStore()
+  return (
+    <NavLink
+      to="/notifications"
+      aria-label={unread ? `Уведомления: ${unread} новых` : 'Уведомления'}
+      title="Уведомления"
+      className={({ isActive }) =>
+        cx(
+          'press relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border',
+          isActive ? 'chip-on' : 'border-transparent hover:bg-active',
+          className,
+        )
+      }
+    >
+      <Bell size={20} />
+      {unread > 0 && (
+        <span className="absolute -top-1 -right-1 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
+          {unread > 99 ? '99+' : unread}
+        </span>
+      )}
+    </NavLink>
+  )
+}
+
 /** Шапка для компьютера — DESIGN_WEB 2 */
 function Header() {
-  const { me, authed, authReady, loaded, setLoginOpen } = useStore()
+  const { me, authed, authReady, hasUser, setLoginOpen } = useStore()
   const { openCreate } = useUi()
   return (
     <header className="glass sticky top-0 z-40 hidden border-x-0 border-t-0 md:block">
@@ -72,7 +98,8 @@ function Header() {
           Создать
         </Button>
         {/* пока не знаем, вошёл ли человек, — круглое место под аватар (без мигания кнопки «Войти») */}
-        {!authReady || (authed && !loaded) ? (
+        {authed && <NoticeBell />}
+        {!authReady || (authed && !hasUser(me.id)) ? (
           <Bone className="h-9 w-9 shrink-0 rounded-full" />
         ) : authed ? (
           <Link to="/me" className="shrink-0 rounded-full" aria-label="Мой профиль">
@@ -136,6 +163,7 @@ function BottomNav() {
 
 /** Шапка главного экрана на телефоне: логотип и поиск */
 export function MobileTop({ title }: { title?: string }) {
+  const { authed } = useStore()
   return (
     <div className="flex items-center gap-2 px-3 pt-3 pb-2 md:hidden">
       {title ? (
@@ -146,6 +174,7 @@ export function MobileTop({ title }: { title?: string }) {
           <span className="text-xl font-bold">Клубок</span>
         </Link>
       )}
+      {authed && <NoticeBell className="card" />}
       <Link to="/search" aria-label="Поиск" className="press card inline-flex h-9 w-9 items-center justify-center">
         <Search size={18} />
       </Link>
@@ -153,21 +182,7 @@ export function MobileTop({ title }: { title?: string }) {
   )
 }
 
-/** Нет связи и показать нечего — кнопка «Повторить». Пока данные грузятся, каждая страница сама показывает свои заглушки. */
-function LoadError() {
-  const { retry } = useStore()
-  return (
-    <div className="flex flex-col items-center">
-      <Empty icon={WifiOff}>Не удалось загрузить идеи. Проверьте интернет.</Empty>
-      <Button kind="secondary" size="sm" icon={RotateCcw} onClick={retry}>
-        Повторить
-      </Button>
-    </div>
-  )
-}
-
 export function Layout() {
-  const { failed } = useStore()
   return (
     <>
       <a
@@ -178,7 +193,7 @@ export function Layout() {
       </a>
       <Header />
       <main id="main" className="mx-auto max-w-[1600px] pb-32 md:pb-12">
-        {failed ? <LoadError /> : <Outlet />}
+        <Outlet />
       </main>
       <BottomNav />
     </>

@@ -20,8 +20,9 @@
       } catch (e) {}
     </script>
     <script>
-      // Лента, авторы и отзывы — запрашиваем сразу, пока грузится код сайта. Сайт возьмёт уже начатые запросы
-      // (список должен совпадать с PUBLIC_QUERIES в src/supabase.ts). Соединение с сервером открываем заранее.
+      // Первая порция ленты «Для вас» и категории — запрашиваем сразу, пока грузится код сайта. Сайт возьмёт уже начатые запросы
+      // (адреса должны совпадать с feedQuery и TOPICS_QUERY в src/supabase.ts, порядок — как feedSeed в src/store.tsx).
+      // Вошедшему — с его пропуском (лента по интересам). Соединение с сервером открываем заранее.
       try {
         var api = '%VITE_API_URL%';
         if (!api || api.charAt(0) === '%') api = '%VITE_SUPABASE_URL%';
@@ -34,19 +35,29 @@
           if (cors) l.crossOrigin = 'anonymous';
           document.head.appendChild(l);
         });
+        var seed = new Date().toISOString().slice(0, 10);
+        try {
+          var c = JSON.parse(localStorage.getItem('klubok.data.v2'));
+          if (c && typeof c.seed === 'string' && Date.now() - c.at < 6 * 3600000) seed = c.seed;
+        } catch (e) {}
+        var token = null;
+        try {
+          var ref = new URL('%VITE_SUPABASE_URL%').hostname.split('.')[0];
+          var ses = JSON.parse(localStorage.getItem('sb-' + ref + '-auth-token'));
+          if (ses && ses.access_token && ses.expires_at * 1000 > Date.now() + 30000) token = ses.access_token;
+        } catch (e) {}
         window.__klubokPre = {};
         [
-          'profiles?select=*',
-          'posts?select=*&order=created_at.desc&limit=1000',
-          'tries?select=*&order=created_at.desc&limit=5000',
-          'try_replies?select=*&order=created_at.asc&limit=10000',
-        ].forEach(function (q) {
-          var p = fetch(api + '/rest/v1/' + q + '&apikey=' + key).then(function (r) {
+          ['rpc/feed?p_seed=' + encodeURIComponent(seed) + '&p_offset=0&p_limit=30', true],
+          ['rpc/used_topics', false],
+        ].forEach(function (x) {
+          var auth = x[1] && token;
+          var p = fetch(api + '/rest/v1/' + x[0] + (x[0].indexOf('?') < 0 ? '?' : '&') + 'apikey=' + key, auth ? { headers: { Authorization: 'Bearer ' + token } } : undefined).then(function (r) {
             if (!r.ok) throw new Error(r.status);
             return r.json();
           });
           p.catch(function () {});
-          window.__klubokPre[q] = p;
+          window.__klubokPre[x[0] + (auth ? '#auth' : '')] = p;
         });
       } catch (e) {}
     </script>

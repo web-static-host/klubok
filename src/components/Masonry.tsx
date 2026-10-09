@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Post } from '../data/types'
 import { PinCard } from './PinCard'
+import type { Source } from '../track'
 
 /** Колонки по ширине экрана — DESIGN_WEB 3.2 */
 function columnsFor(w: number) {
@@ -22,7 +23,8 @@ export function useColumns() {
 }
 
 /** Плитка: каждая карточка идёт в самую короткую колонку, порядок сохраняется слева направо */
-export function Masonry({ posts, folderId }: { posts: Post[]; folderId?: string }) {
+/** source — где показана плитка (для статистики автора) */
+export function Masonry({ posts, folderId, source }: { posts: Post[]; folderId?: string; source: Source }) {
   const n = useColumns()
   const cols: Post[][] = Array.from({ length: n }, () => [])
   const heights = new Array(n).fill(0)
@@ -36,7 +38,7 @@ export function Masonry({ posts, folderId }: { posts: Post[]; folderId?: string 
       {cols.map((col, i) => (
         <div key={i} className="flex min-w-0 flex-1 flex-col gap-4 sm:gap-5">
           {col.map((p) => (
-            <PinCard key={p.id} post={p} folderId={folderId} />
+            <PinCard key={p.id} post={p} folderId={folderId} source={source} />
           ))}
         </div>
       ))}

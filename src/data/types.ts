@@ -40,10 +40,11 @@ export interface Post {
   images: Img[]
   /** сколько человек сохранили в свои папки */
   saves: number
-  /** скрыта (видит только автор): причина — подробная проверка после публикации нашла в тексте на картинке ссылку или мат */
+  /** скрыта (видит только автор): причина — ИИ после публикации нашёл в тексте на картинке ссылку или мат, или решил модератор */
   hidden?: string
-  /** ТЕСТ: показы в ленте и клики — статистика для автора; сейчас видна кнопкой «Статистика (тест)» */
-  stats?: { views: number; clicks: number }
+  /** сколько раз отметили «Я попробовал» и у скольких получилось (считает база) */
+  tries: number
+  triesOk: number
   /** скрытые слова для поиска (свои и от ИИ); на сайте не показываются */
   tags: string[]
   /** ТЕСТ: что увидел ИИ — показывается кнопкой «Теги ИИ» на странице поста; убрать после тестов */
@@ -120,3 +121,37 @@ export const TOPICS: { id: Topic; label: string }[] = [
 
 /** Название категории: из списка или своя как есть */
 export const topicLabel = (t: Topic) => TOPICS.find((x) => x.id === t)?.label ?? t
+
+/** Уведомление (колокольчик) */
+export interface Notice {
+  id: string
+  /** tried, reply, follower, saved, saves_daily, hidden, restored, removed, report_done, blocked, unblocked, profile_cleared */
+  kind: string
+  actorId?: string
+  postId?: string
+  tryId?: string
+  data: Record<string, unknown>
+  read: boolean
+  createdAt: number
+}
+
+/** Какие уведомления присылать; сохранения — каждое, сводкой за день или никогда */
+export interface NoticeSettings {
+  tried: boolean
+  reply: boolean
+  follower: boolean
+  saves: 'each' | 'daily' | 'off'
+  moderation: boolean
+}
+
+/** Жалоба: на что и почему */
+export type ReportTarget = 'post' | 'try' | 'reply' | 'profile'
+export const REPORT_REASONS: { id: string; label: string }[] = [
+  { id: 'abuse', label: 'Мат или оскорбления' },
+  { id: 'people', label: 'Люди на картинке' },
+  { id: 'ads', label: 'Реклама, ссылки или контакты' },
+  { id: 'danger', label: 'Опасное или запрещённое' },
+  { id: 'spam', label: 'Спам' },
+  { id: 'stolen', label: 'Это моя картинка' },
+  { id: 'other', label: 'Другое' },
+]

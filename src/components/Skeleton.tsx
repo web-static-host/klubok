@@ -134,7 +134,9 @@ export function ProfileHeadSkeleton({ self }: { self?: boolean }) {
             </p>
           </div>
           {/* у себя: на компьютере «Изменить профиль» и «Выйти» столбиком, на телефоне — шестерёнка; у чужого — «Подписаться» */}
-          <Bone className={cx('ml-1 shrink-0 rounded-2xl', self ? 'h-10 w-10 md:h-[68px] md:w-[188px]' : 'h-9 w-[120px] max-md:hidden')} />
+          <Bone
+            className={cx('ml-1 shrink-0 rounded-2xl', self ? 'h-10 w-[88px] md:h-[68px] md:w-[188px]' : 'h-9 w-[120px] max-md:hidden')}
+          />
         </div>
         {!self && <Bone className="min-h-12 rounded-2xl md:hidden" />}
         <div className="grid grid-cols-3 gap-2 md:flex">
@@ -148,6 +150,7 @@ export function ProfileHeadSkeleton({ self }: { self?: boolean }) {
               </div>
             </div>
           ))}
+          {self && <Bone className="hidden rounded-2xl md:block md:w-[120px]" />}
         </div>
       </section>
       {self && (

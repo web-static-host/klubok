@@ -4,6 +4,8 @@ import { TriedSheet } from './components/TriedSheet'
 import { CreateSheet } from './components/CreateSheet'
 import { LoginSheet, NewPasswordSheet } from './components/LoginSheet'
 import { RulesSheet } from './components/RulesSheet'
+import { ReportSheet } from './components/ReportSheet'
+import type { ReportTarget } from './data/types'
 import { useStore } from './store'
 
 /** Общие окна: «Сохранить в папку», «Я попробовал», «Создать», «Вход». Открываются из любого места; гостю — сначала вход. */
@@ -13,6 +15,8 @@ interface Ui {
   openCreate: () => void
   /** правила — окном поверх текущего */
   openRules: () => void
+  /** «Пожаловаться» на идею, отзыв, ответ или профиль; гостю — вход */
+  openReport: (type: ReportTarget, id: string) => void
   toast: (text: string) => void
 }
 const Ctx = createContext<Ui | null>(null)
@@ -22,6 +26,7 @@ export function UiProvider({ children }: { children: ReactNode }) {
   const [tried, setTried] = useState<string | null>(null)
   const [create, setCreate] = useState(false)
   const [rules, setRules] = useState(false)
+  const [reportOn, setReportOn] = useState<{ type: ReportTarget; id: string } | null>(null)
   const [toastText, setToastText] = useState<string | null>(null)
 
   const { authed, setLoginOpen, notice, clearNotice, post, me } = useStore()
@@ -53,6 +58,7 @@ export function UiProvider({ children }: { children: ReactNode }) {
         ),
         openCreate: guard(() => setCreate(true)),
         openRules: () => setRules(true),
+        openReport: guard((type: ReportTarget, id: string) => setReportOn({ type, id })),
         toast,
       }}
     >
@@ -63,6 +69,7 @@ export function UiProvider({ children }: { children: ReactNode }) {
       <LoginSheet />
       <NewPasswordSheet />
       <RulesSheet open={rules} onClose={() => setRules(false)} />
+      <ReportSheet target={reportOn} onClose={() => setReportOn(null)} />
       {toastText && (
         <div
           role="status"

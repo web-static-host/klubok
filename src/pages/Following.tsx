@@ -1,9 +1,13 @@
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Bookmark, CircleCheck, MessageCircle, Users } from 'lucide-react'
 import type { Post } from '../data/types'
-import { useStore } from '../store'
+import { useStore, type PostRow, type ProfileRow } from '../store'
 import { useUi } from '../ui-context'
 import { num, plural, timeAgo } from '../lib'
+import { accessToken, restGet } from '../supabase'
+import { trackView } from '../track'
+import { MoreLoader, usePaged } from '../components/Paged'
 import { MobileTop } from '../components/Layout'
 import { Avatar, Button, Empty, TopicBadge } from '../components/ui'
 import { Gallery } from '../components/Gallery'
@@ -11,15 +15,30 @@ import { Bone, FeedCardSkeleton } from '../components/Skeleton'
 
 /** Лента подписок — одна колонка, как в Instagram (DESIGN_WEB 3.4) */
 function FeedCard({ post }: { post: Post }) {
-  const { user, triesOf, savedIn, me } = useStore()
+  const { user, savedIn, me } = useStore()
   const { openSave, openTried } = useUi()
   const a = user(post.authorId)
-  const tries = triesOf(post.id)
-  const ok = tries.filter((t) => t.ok).length
+  const ok = post.triesOk
   const saved = savedIn(post.id).length > 0
+  // статистика автора: показ в подписках
+  const box = useRef<HTMLElement>(null)
+  useEffect(() => {
+    const el = box.current
+    if (!el || post.authorId === me.id || typeof IntersectionObserver === 'undefined') return
+    const io = new IntersectionObserver(
+      ([e]) => {
+        if (!e.isIntersecting) return
+        trackView(post.id, 'following')
+        io.disconnect()
+      },
+      { threshold: 0.5 },
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  }, [post.id, post.authorId, me.id])
 
   return (
-    <article className="card fade-up p-3">
+    <article ref={box} className="card fade-up p-3">
       <header className="mb-3 flex items-center gap-3">
         <Link to={`/u/${a.id}`} className="rounded-full">
           <Avatar user={a} size={36} />
@@ -38,11 +57,12 @@ function FeedCard({ post }: { post: Post }) {
       <div className="mt-2 flex items-center gap-1">
         <Link
           to={`/p/${post.id}?tab=tries`}
+          state={{ src: 'following' }}
           className="press inline-flex h-10 items-center gap-1.5 rounded-2xl px-2 text-sm font-semibold whitespace-nowrap hover:bg-active"
           aria-label="Отзывы повторивших"
         >
           <MessageCircle size={20} />
-          {tries.length}
+          {post.tries}
         </Link>
         {post.authorId !== me.id && (
           <button
@@ -64,7 +84,7 @@ function FeedCard({ post }: { post: Post }) {
         {post.saves > 0 && <span className="-ml-1 text-sm font-semibold">{num(post.saves)}</span>}
       </div>
 
-      <Link to={`/p/${post.id}`} className="mt-1 block px-1">
+      <Link to={`/p/${post.id}`} state={{ src: 'following' }} className="mt-1 block px-1">
         <h2 className="text-sm font-semibold">{post.title}</h2>
         {ok > 0 && (
           <p className="mt-2 text-xs font-semibold text-accent">
@@ -77,17 +97,41 @@ function FeedCard({ post }: { post: Post }) {
 }
 
 export function Following() {
-  const { posts, follows, users, toggleFollow, me, loaded, mineReady } = useStore()
-  const list = posts
-    .filter((p) => !p.hidden && (follows.includes(p.authorId) || p.authorId === me.id))
-    .sort((a, b) => b.createdAt - a.createdAt)
-  const suggest = users.filter((u) => u.id !== me.id && !follows.includes(u.id)).slice(0, 4)
+  const { follows, user, toggleFollow, me, mineReady, addUserRows } = useStore()
+  // свои и тех, на кого подписан, — новые сверху, порциями
+  const authors = [...follows, me.id].filter(Boolean)
+  const { posts, list, more, retry } = usePaged(
+    'following',
+    async (offset, limit) =>
+      authors.length
+        ? restGet<PostRow[]>(
+            `posts?select=*&author_id=in.(${authors.join(',')})&hidden=is.false&order=created_at.desc&offset=${offset}&limit=${limit}`,
+            await accessToken(),
+          )
+        : [],
+    { enabled: mineReady },
+  )
+  // кого почитать: популярные авторы, на которых ещё не подписан
+  const [popular, setPopular] = useState<string[]>([])
+  useEffect(() => {
+    restGet<ProfileRow[]>('profiles?select=*&order=followers_count.desc&limit=20')
+      .then((rows) => {
+        addUserRows(rows)
+        setPopular(rows.map((r) => r.id))
+      })
+      .catch(() => {})
+  }, [addUserRows])
+  const suggest = popular
+    .filter((id) => id !== me.id && !follows.includes(id))
+    .slice(0, 4)
+    .map(user)
+  const list2 = posts.filter((p) => !p.hidden)
 
   return (
     <>
       <MobileTop title="Подписки" />
       <div className="mx-auto flex max-w-[560px] flex-col gap-4 px-3 md:pt-6">
-        {!loaded || !mineReady ? (
+        {!mineReady || !list?.loaded ? (
           <>
             <div className="card p-3" role="status" aria-label="Загрузка">
               <Bone className="mb-3 h-3 w-28" />
@@ -121,8 +165,13 @@ export function Following() {
                 </div>
               </section>
             )}
-            {list.length ? (
-              list.map((p) => <FeedCard key={p.id} post={p} />)
+            {list2.length ? (
+              <>
+                {list2.map((p) => (
+                  <FeedCard key={p.id} post={p} />
+                ))}
+                <MoreLoader list={list} onMore={more} onRetry={retry} />
+              </>
             ) : (
               <Empty icon={Users}>Подпишитесь на авторов — их идеи появятся здесь.</Empty>
             )}

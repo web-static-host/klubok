@@ -9,6 +9,8 @@ import { FolderPage, Folders } from './pages/Folders'
 import { Profile } from './pages/Profile'
 import { Search } from './pages/Search'
 import { Rules } from './pages/Rules'
+import { Notifications } from './pages/Notifications'
+import { StatsPage } from './pages/Stats'
 
 // HashRouter: адреса вида /klubok/#/p/1 — работают на GitHub Pages без настройки сервера
 export default function App({ linkError, recovery }: { linkError: string | null; recovery: boolean }) {
@@ -27,6 +29,9 @@ export default function App({ linkError, recovery }: { linkError: string | null;
               <Route path="me" element={<Profile self />} />
               <Route path="search" element={<Search />} />
               <Route path="rules" element={<Rules />} />
+              <Route path="notifications" element={<Notifications />} />
+              <Route path="stats" element={<StatsPage />} />
+              <Route path="stats/:id" element={<StatsPage key="post" />} />
               <Route path="*" element={<Home />} />
             </Route>
           </Routes>

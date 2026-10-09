@@ -15,16 +15,16 @@ export const supabase = createClient(API_URL, import.meta.env.VITE_SUPABASE_PUBL
 })
 
 /**
- * Открытые данные (лента, авторы, отзывы) — простым запросом: ключ в адресе, без особых заголовков.
- * Так браузер не делает перед каждым запросом предварительный (минус один круг до Supabase).
- * Первые запросы index.html запускает сам, ещё до загрузки кода сайта, — тогда берём уже начатые.
+ * Открытые данные — простым запросом: ключ в адресе, без особых заголовков (вошедшему — ещё и его пропуск).
+ * Первые запросы index.html запускает сам, ещё до загрузки кода сайта, — тогда берём уже начатые (адрес должен совпадать).
  */
-export const PUBLIC_QUERIES = [
-  'profiles?select=*',
-  'posts?select=*&order=created_at.desc&limit=1000',
-  'tries?select=*&order=created_at.desc&limit=5000',
-  'try_replies?select=*&order=created_at.asc&limit=10000',
-] as const
+/** Порядок ленты «Для вас» по умолчанию: один на день (так index.html может начать загрузку заранее) */
+export const daySeed = () => new Date().toISOString().slice(0, 10)
+/** Порция ленты «Для вас» (функция базы feed) */
+export const feedQuery = (seed: string, offset: number, limit: number, topic?: string | null) =>
+  `rpc/feed?p_seed=${encodeURIComponent(seed)}&p_offset=${offset}&p_limit=${limit}${topic ? `&p_topic=${encodeURIComponent(topic)}` : ''}`
+/** Категории, в которых есть идеи */
+export const TOPICS_QUERY = 'rpc/used_topics'
 
 declare global {
   interface Window {
@@ -37,10 +37,13 @@ const RETRIES = [300, 1000, 2500]
 /** сколько ждать ответа, прежде чем спросить заново: первая попытка — недолго, следующие — дольше (медленный интернет) */
 const TIMEOUTS = [5000, 10000, 15000, 20000]
 
-export async function restGet<T>(path: string): Promise<T> {
-  const pre = window.__klubokPre?.[path]
+/** token — пропуск вошедшего (лента по его интересам, свои скрытые идеи); без него — как гость */
+export async function restGet<T>(path: string, token?: string): Promise<T> {
+  // начатый заранее запрос — только если он был с тем же пропуском (или оба без)
+  const preKey = path + (token ? '#auth' : '')
+  const pre = window.__klubokPre?.[preKey]
   if (pre) {
-    delete window.__klubokPre![path]
+    delete window.__klubokPre![preKey]
     try {
       // начатый заранее запрос тоже может зависнуть — ждём не дольше обычного
       return (await Promise.race([pre, new Promise((_, no) => setTimeout(() => no(new Error('долго')), TIMEOUTS[0]))])) as T
@@ -56,7 +59,7 @@ export async function restGet<T>(path: string): Promise<T> {
     const stop = new AbortController()
     const timer = setTimeout(() => stop.abort(), TIMEOUTS[Math.min(i + 1, TIMEOUTS.length - 1)])
     try {
-      r = await fetch(url, { signal: stop.signal })
+      r = await fetch(url, { signal: stop.signal, ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}) })
       if (r.ok) return (await r.json()) as T
     } catch {
       /* обрыв связи (в том числе посреди ответа) или ждали слишком долго */
@@ -93,4 +96,9 @@ export async function finishEmailLink(): Promise<{ error: string | null; recover
 /** Разбудить проверку заранее (открыли «Новая идея»): функция запускается и входит в ИИ, пока человек выбирает картинку */
 export function warmChecks() {
   supabase.functions.invoke('publish', { body: { action: 'warm' } }).catch(() => {})
+}
+
+/** Пропуск вошедшего (для restGet); гостю — undefined */
+export async function accessToken(): Promise<string | undefined> {
+  return (await supabase.auth.getSession()).data.session?.access_token
 }

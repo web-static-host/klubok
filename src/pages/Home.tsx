@@ -1,36 +1,67 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { Sparkles } from 'lucide-react'
 import { TOPICS, topicLabel, type Topic } from '../data/types'
-import { useStore } from '../store'
+import { homeKey, useStore, type PostRow } from '../store'
+import { TOPICS_QUERY, accessToken, feedQuery, restGet } from '../supabase'
 import { MobileTop } from '../components/Layout'
 import { Masonry } from '../components/Masonry'
-import { Chip } from '../components/ui'
+import { MoreLoader, usePaged } from '../components/Paged'
+import { Chip, Empty } from '../components/ui'
 import { ScrollRow } from '../components/ScrollRow'
 import { ChipsSkeleton, MasonrySkeleton } from '../components/Skeleton'
 
-/** «Для вас» — лента-плитка. Порядок пока простой: свежее и часто сохраняемое вперемешку. */
+/** категории, в которых есть идеи, — запоминаем, чтобы при следующем заходе показать сразу */
+const TOPICS_CACHE = 'klubok.topics'
+function cachedTopics(): string[] | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(TOPICS_CACHE) ?? 'null')
+    return Array.isArray(v) ? v : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * «Для вас» — лента-плитка по интересам (функция базы feed): в каждых 10 идеях 7 — по интересам, 2 — свежее и популярное,
+ * 1 — случайное. Гостю — свежее и популярное. Подгружается порциями, когда долистали до конца.
+ */
 export function Home() {
-  const { posts, loaded } = useStore()
-  const [topic, setTopic] = useState<Topic | 'all'>('all')
-  // таблетки — только категории, в которых есть посты: сначала из списка, потом свои
-  const topics = useMemo(() => {
-    const used = new Set(posts.flatMap((p) => p.topics))
-    const own = [...used].filter((t) => !TOPICS.some((x) => x.id === t))
-    return [...TOPICS.map((x) => x.id).filter((t) => used.has(t)), ...own]
-  }, [posts])
-  const list = (topic === 'all' ? posts : posts.filter((p) => p.topics.includes(topic)))
-    .filter((p) => !p.hidden)
-    .map((p, i) => ({ p, score: p.saves / 5 + (posts.length - i) / 6 }))
-    .sort((a, b) => b.score - a.score)
-    .map((x) => x.p)
+  const { me, authReady, feedSeed, notInterested } = useStore()
+  const [topic, setTopic] = useState<Topic | null>(null)
+  const [used, setUsed] = useState<string[] | null>(cachedTopics)
+  useEffect(() => {
+    restGet<string[]>(TOPICS_QUERY)
+      .then((t) => {
+        setUsed(t)
+        try {
+          localStorage.setItem(TOPICS_CACHE, JSON.stringify(t))
+        } catch {
+          /* не страшно */
+        }
+      })
+      .catch(() => setUsed((u) => u ?? []))
+  }, [])
+  // таблетки — только категории, в которых есть идеи: сначала из списка, потом свои
+  const topics = used
+    ? [...TOPICS.map((x) => x.id).filter((t) => used.includes(t)), ...used.filter((t) => !TOPICS.some((x) => x.id === t))]
+    : null
+
+  const uid = me.id || null
+  const { posts, list, more, retry } = usePaged(
+    homeKey(topic, uid),
+    async (offset, limit) => restGet<PostRow[]>(feedQuery(feedSeed, offset, limit, topic), uid ? await accessToken() : undefined),
+    { enabled: authReady, refresh: true },
+  )
+  const shown = posts.filter((p) => !p.hidden && !notInterested.has(p.id))
 
   return (
     <>
       <MobileTop />
       {/* полоска категорий — ровно по ширине ленты */}
       <div className="px-2 pt-1 pb-3 sm:px-3 md:px-4 md:pt-4 lg:px-6">
-        {loaded ? (
+        {topics ? (
           <ScrollRow label="Категории">
-            <Chip active={topic === 'all'} onClick={() => setTopic('all')}>
+            <Chip active={topic === null} onClick={() => setTopic(null)}>
               Все
             </Chip>
             {topics.map((t) => (
@@ -43,7 +74,22 @@ export function Home() {
           <ChipsSkeleton />
         )}
       </div>
-      <div className="px-2 sm:px-3 md:px-4 lg:px-6">{loaded ? <Masonry posts={list} /> : <MasonrySkeleton />}</div>
+      <div className="px-2 sm:px-3 md:px-4 lg:px-6">
+        {!list?.loaded ? (
+          list?.error ? (
+            <MoreLoader list={{ ...list, loaded: true }} onMore={more} onRetry={retry} />
+          ) : (
+            <MasonrySkeleton />
+          )
+        ) : shown.length ? (
+          <>
+            <Masonry posts={shown} source="home" />
+            <MoreLoader list={list} onMore={more} onRetry={retry} />
+          </>
+        ) : (
+          <Empty icon={Sparkles}>Здесь пока пусто. Загляните позже — идеи появляются каждый день.</Empty>
+        )}
+      </div>
     </>
   )
 }

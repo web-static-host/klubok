@@ -1,10 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { AiMeta, Folder, Img, Post, PostType, Reply, Topic, Try, User } from './data/types'
-import { PUBLIC_QUERIES, canonical, restGet, supabase } from './supabase'
+import type { AiMeta, Folder, Img, Notice, NoticeSettings, Post, PostType, Reply, ReportTarget, Topic, Try, User } from './data/types'
+import { canonical, daySeed, restGet, supabase } from './supabase'
 import { localCopy, shrink } from './lib'
 
 /**
  * Состояние сайта. Данные — в базе Supabase, тема оформления — в браузере.
+ * Идеи, авторы и отзывы подгружаются порциями — по мере надобности (лента, профиль, поиск, страница идеи),
+ * всё загруженное складывается в общие справочники (postMap, userMap), списки хранят только порядок (lists).
  * Действия сразу меняют экран, а затем сохраняются в базе; при ошибке — сообщение и перезагрузка своих данных.
  */
 
@@ -19,33 +21,62 @@ export interface NewPost {
   images: Img[]
 }
 
-interface Store {
-  /** загрузка закончена: общие данные есть и известно, вошёл ли человек */
-  ready: boolean
-  /** общие данные (лента, авторы, отзывы) есть — из прошлого захода или уже загружены */
+/** Сколько идей в одной порции */
+export const PAGE = 30
+
+/** Список идей, подгружаемый порциями: порядок и состояние загрузки */
+export interface PagedList {
+  ids: string[]
+  /** больше нечего подгружать */
+  done: boolean
+  loading: boolean
+  error: boolean
+  /** первая порция уже есть (или показана из прошлого захода) */
   loaded: boolean
+}
+/** Порция идей: с какого места и сколько */
+export type Loader = (offset: number, limit: number) => Promise<PostRow[]>
+
+/** Ключ ленты «Для вас»: у каждого человека своя (по интересам), с категорией — отдельный список */
+export const homeKey = (topic: string | null, uid: string | null) => `home:${uid ?? 'guest'}:${topic ?? 'all'}`
+
+interface Store {
   /** известно, вошёл ли человек */
   authReady: boolean
   /** свои данные (папки, подписки) загружены; гостю — сразу, как только известно, что он гость */
   mineReady: boolean
-  /** не удалось загрузить данные */
-  failed: boolean
-  retry: () => void
   /** вошёл ли пользователь */
   authed: boolean
   email: string
   me: User
-  users: User[]
-  posts: Post[]
-  tries: Try[]
-  replies: Reply[]
   folders: Folder[]
   follows: string[]
   theme: ThemeMode
   user: (id: string) => User
+  /** профиль уже загружен */
+  hasUser: (id: string) => boolean
   post: (id: string) => Post | undefined
-  triesOf: (postId: string) => Try[]
+  /** подгрузить недостающие идеи и профили (по id) */
+  ensurePosts: (ids: string[]) => void
+  ensureUsers: (ids: string[]) => void
+  /** идеи из базы → в справочник (и их авторов) */
+  addPostRows: (rows: PostRow[]) => void
+  /** профили из базы → в справочник */
+  addUserRows: (rows: ProfileRow[]) => void
+
+  // ─── списки порциями ───
+  lists: Record<string, PagedList>
+  /** следующая порция (reset — заново с начала) */
+  loadMore: (key: string, loader: Loader, reset?: boolean) => void
+  /** порядок ленты «Для вас» на этот заход (тот же — при подгрузке следующих порций) */
+  feedSeed: string
+
+  // ─── отзывы ───
+  /** отзывы к идее; undefined — ещё не загружены */
+  triesOf: (postId: string) => Try[] | undefined
   repliesOf: (tryId: string) => Reply[]
+  loadTries: (postId: string) => void
+
   toggleFollow: (userId: string) => void
   addPost: (p: NewPost) => Promise<string>
   /** только что опубликованная идея — пару секунд подсвечена в списке */
@@ -68,8 +99,25 @@ interface Store {
   createFolder: (name: string, postId?: string) => string
   toggleDone: (folderId: string, postId: string) => void
   savedIn: (postId: string) => Folder[]
+
+  // ─── «Не интересно» и жалобы ───
+  notInterested: Set<string>
+  /** убрать идею из ленты и меньше показывать похожие */
+  markNotInterested: (postId: string) => void
+  undoNotInterested: (postId: string) => void
+  /** пожаловаться; вернёт null, 'already' (уже жаловались) или текст ошибки */
+  report: (type: ReportTarget, id: string, reason: string, comment: string, link: string) => Promise<null | 'already' | string>
+
+  // ─── уведомления ───
+  notices: Notice[]
+  unread: number
+  noticesLoaded: boolean
+  loadNotices: () => void
+  markNoticesRead: () => void
+  noticeSettings: NoticeSettings
+  saveNoticeSettings: (patch: Partial<NoticeSettings>) => void
+
   setTheme: (t: ThemeMode) => void
-  /** вход: письмо со ссылкой; вернёт текст ошибки или null */
   /** вход, регистрация, «забыли пароль», новый пароль; вернут текст ошибки или null */
   signIn: (email: string, password: string) => Promise<string | null>
   /** 'confirm' — нужно подтвердить почту по письму */
@@ -94,9 +142,10 @@ interface Store {
 const Ctx = createContext<Store | null>(null)
 
 const GUEST: User = { id: '', name: 'Гость', handle: '', bio: '', colors: ['#94A3B8', '#64748B'], followers: 0 }
+const DEFAULT_SETTINGS: NoticeSettings = { tried: true, reply: true, follower: true, saves: 'daily', moderation: true }
 
 // ─── Строки базы → типы сайта ───────────────────────────────
-interface ProfileRow {
+export interface ProfileRow {
   id: string
   name: string
   handle: string
@@ -105,7 +154,7 @@ interface ProfileRow {
   avatar_url: string | null
   followers_count: number
 }
-interface PostRow {
+export interface PostRow {
   id: string
   author_id: string
   type: PostType
@@ -120,10 +169,10 @@ interface PostRow {
   /** категории (до обновления 007 — только topic) */
   topics?: string[]
   saves_count?: number
+  tries_count?: number
+  tries_ok_count?: number
   hidden?: boolean
   hidden_reason?: string | null
-  views_count?: number
-  clicks_count?: number
   created_at: string
 }
 interface TryRow {
@@ -135,17 +184,34 @@ interface TryRow {
   img: Img | null
   created_at: string
 }
+interface ReplyRow {
+  id: string
+  try_id: string
+  user_id: string
+  text: string
+  created_at: string
+}
+interface NoticeRow {
+  id: string
+  kind: string
+  actor_id: string | null
+  post_id: string | null
+  try_id: string | null
+  data: Record<string, unknown> | null
+  read: boolean
+  created_at: string
+}
 
 const toUser = (r: ProfileRow): User => ({
   id: r.id,
   name: r.name || r.handle,
   handle: r.handle,
   bio: r.bio,
-  colors: [r.colors[0] ?? GUEST.colors[0], r.colors[1] ?? GUEST.colors[1]],
+  colors: [r.colors?.[0] ?? GUEST.colors[0], r.colors?.[1] ?? GUEST.colors[1]],
   avatar: r.avatar_url ?? undefined,
   followers: r.followers_count,
 })
-const toPost = (r: PostRow): Post => ({
+export const toPost = (r: PostRow): Post => ({
   id: r.id,
   type: r.type === 'beforeafter' ? 'beforeafter' : 'photo',
   topics: r.topics?.length ? r.topics : [r.topic],
@@ -154,18 +220,12 @@ const toPost = (r: PostRow): Post => ({
   createdAt: Date.parse(r.created_at),
   images: r.images,
   saves: r.saves_count ?? 0,
+  tries: r.tries_count ?? 0,
+  triesOk: r.tries_ok_count ?? 0,
   hidden: r.hidden ? r.hidden_reason || 'Нарушает правила' : undefined,
-  stats: { views: r.views_count ?? 0, clicks: r.clicks_count ?? 0 },
   tags: [...r.tags, ...(r.ai_tags ?? [])],
   ai: { tags: r.ai_tags ?? [], text: r.ai_text ?? '', checked: !!r.checked_by_ai, meta: r.ai_meta ?? null },
 })
-interface ReplyRow {
-  id: string
-  try_id: string
-  user_id: string
-  text: string
-  created_at: string
-}
 const toReply = (r: ReplyRow): Reply => ({
   id: r.id,
   tryId: r.try_id,
@@ -173,7 +233,6 @@ const toReply = (r: ReplyRow): Reply => ({
   text: r.text,
   createdAt: Date.parse(r.created_at),
 })
-
 const toTry = (r: TryRow): Try => ({
   id: r.id,
   postId: r.post_id,
@@ -183,40 +242,51 @@ const toTry = (r: TryRow): Try => ({
   img: r.img ?? undefined,
   createdAt: Date.parse(r.created_at),
 })
+const toNotice = (r: NoticeRow): Notice => ({
+  id: r.id,
+  kind: r.kind,
+  actorId: r.actor_id ?? undefined,
+  postId: r.post_id ?? undefined,
+  tryId: r.try_id ?? undefined,
+  data: r.data ?? {},
+  read: r.read,
+  createdAt: Date.parse(r.created_at),
+})
 
-type PublicRows = [ProfileRow[], PostRow[], TryRow[], ReplyRow[]]
-/** Последние загруженные лента, авторы и отзывы — при следующем заходе показываем сразу, а свежие подгружаем следом */
-const CACHE = 'klubok.data.v1'
-function loadCache(): PublicRows | null {
+// ─── Запомненное в браузере ─────────────────────────────────
+/** Первая порция ленты «Для вас» и её авторы — при следующем заходе показываем сразу, свежие подгружаем следом */
+const CACHE = 'klubok.data.v2'
+interface Cached {
+  /** чья это лента (гость — null) */
+  uid: string | null
+  seed: string
+  at: number
+  posts: PostRow[]
+  users: ProfileRow[]
+}
+function loadCache(): Cached | null {
   try {
     const v = JSON.parse(localStorage.getItem(CACHE) ?? 'null')
-    return Array.isArray(v) && v.length === 4 && v.every(Array.isArray) ? (v as PublicRows) : null
+    return v && Array.isArray(v.posts) && Array.isArray(v.users) && typeof v.seed === 'string' ? (v as Cached) : null
   } catch {
     return null
   }
 }
-/** Свои скрытые идеи — запоминаем для этого человека, чтобы при следующем заходе показать сразу */
-const HIDDEN = 'klubok.hidden.v1'
-function loadHidden(uid: string): PostRow[] {
+function saveJson(key: string, v: unknown) {
   try {
-    const v = JSON.parse(localStorage.getItem(HIDDEN) ?? 'null')
-    return v?.uid === uid && Array.isArray(v.rows) ? (v.rows as PostRow[]) : []
-  } catch {
-    return []
-  }
-}
-function saveHidden(uid: string, rows: PostRow[]) {
-  try {
-    localStorage.setItem(HIDDEN, JSON.stringify({ uid, rows }))
-  } catch {
-    /* места нет — не страшно */
-  }
-}
-function saveCache(rows: PublicRows) {
-  try {
-    localStorage.setItem(CACHE, JSON.stringify(rows))
+    localStorage.setItem(key, JSON.stringify(v))
   } catch {
     /* места нет или запрещено — не страшно */
+  }
+}
+/** «Не интересно» у гостя — только в этом браузере */
+const GUEST_NI = 'klubok.notInterested'
+function loadGuestNi(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(GUEST_NI) ?? '[]')
+    return Array.isArray(v) ? v.filter((x) => typeof x === 'string').slice(-500) : []
+  } catch {
+    return []
   }
 }
 
@@ -236,7 +306,7 @@ export class Rejected extends Error {
 }
 
 /** Всё, что пишут пользователи, уходит в серверную функцию publish: там проверка правил (в том числе ИИ) и запись в базу */
-async function publish(body: Record<string, unknown>): Promise<unknown> {
+export async function publish(body: Record<string, unknown>): Promise<unknown> {
   const { data, error } = await supabase.functions.invoke('publish', { body })
   if (error) {
     let reasons: string[] | undefined
@@ -275,6 +345,17 @@ function authError(e: { code?: string; status?: number; message: string }): stri
   return 'Не получилось. Проверьте данные и попробуйте ещё раз'
 }
 
+/** id вошедшего из запомненного браузером входа — без ожидания проверки (чтобы сразу показать своё) */
+function bootUid(): string | null {
+  try {
+    const ref = new URL(import.meta.env.VITE_SUPABASE_URL).hostname.split('.')[0]
+    const s = JSON.parse(localStorage.getItem(`sb-${ref}-auth-token`) ?? 'null')
+    return typeof s?.user?.id === 'string' ? s.user.id : null
+  } catch {
+    return null
+  }
+}
+
 function loadTheme(): ThemeMode {
   try {
     const t = localStorage.getItem('klubok.theme')
@@ -283,6 +364,17 @@ function loadTheme(): ThemeMode {
     /* браузер без хранилища */
   }
   return 'system'
+}
+
+const uniq = (ids: string[]) => [...new Set(ids.filter(Boolean))]
+const chunks = <T,>(a: T[], n: number) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, i * n + n))
+
+/** Справочник: только изменившиеся записи — новый объект (иначе тот же — без лишней перерисовки) */
+function merge<T>(map: Record<string, T>, items: [string, T][]): Record<string, T> {
+  if (!items.length) return map
+  const next = { ...map }
+  for (const [k, v] of items) next[k] = v
+  return next
 }
 
 export function StoreProvider({
@@ -296,26 +388,51 @@ export function StoreProvider({
   recovery?: boolean
 }) {
   const [cached] = useState(loadCache)
-  // данные есть (из прошлого захода или уже загружены)
-  const [loaded, setLoaded] = useState(!!cached)
-  const [failed, setFailed] = useState(false)
-  const [attempt, setAttempt] = useState(0)
-  const [uid, setUid] = useState<string | null>(null)
+  // кто вошёл — сразу из запомненного браузером входа (проверка входа подтвердит или сбросит)
+  const [uid, setUid] = useState<string | null>(bootUid)
   const [email, setEmail] = useState('')
   const [authKnown, setAuthKnown] = useState(false)
-  const [users, setUsers] = useState<User[]>(() => cached?.[0].map(toUser) ?? [])
-  const [posts, setPosts] = useState<Post[]>(() => cached?.[1].map(toPost) ?? [])
-  // свои скрытые идеи: в общих данных их нет (видит только автор) — отдельно, с запоминанием, чтобы показывались сразу
-  const [hiddenMine, setHiddenMine] = useState<Post[]>([])
-  const [tries, setTries] = useState<Try[]>(() => cached?.[2].map(toTry) ?? [])
-  const [replies, setReplies] = useState<Reply[]>(() => cached?.[3].map(toReply) ?? [])
+  const [userMap, setUserMap] = useState<Record<string, User>>(() =>
+    Object.fromEntries((cached?.users ?? []).map((r) => [r.id, toUser(r)])),
+  )
+  const [postMap, setPostMap] = useState<Record<string, Post>>(() =>
+    Object.fromEntries((cached?.posts ?? []).map((r) => [r.id, toPost(r)])),
+  )
+  // порядок ленты «Для вас»: пока запомненная лента свежая (до 6 часов) — тот же, чтобы она не перемешивалась; иначе — порядок дня
+  // (его же index.html начинает загружать заранее)
+  const [feedSeed] = useState(() => (cached && Date.now() - cached.at < 6 * 3600_000 ? cached.seed : daySeed()))
+  const [lists, setLists] = useState<Record<string, PagedList>>(() =>
+    cached?.posts.length
+      ? {
+          [homeKey(null, cached.uid ?? null)]: {
+            ids: cached.posts.map((p) => p.id),
+            done: false,
+            loading: false,
+            error: false,
+            loaded: true,
+          },
+        }
+      : {},
+  )
+  const [triesMap, setTriesMap] = useState<Record<string, Try[]>>({})
+  const [repliesMap, setRepliesMap] = useState<Record<string, Reply[]>>({})
   const [folders, setFolders] = useState<Folder[]>([])
   const [follows, setFollows] = useState<string[]>([])
+  const [notInterested, setNotInterested] = useState<Set<string>>(() => new Set(loadGuestNi()))
+  const [notices, setNotices] = useState<Notice[]>([])
+  const [noticesLoaded, setNoticesLoaded] = useState(false)
+  const [noticeSettings, setNoticeSettings] = useState<NoticeSettings>(DEFAULT_SETTINGS)
   const [theme, setThemeState] = useState<ThemeMode>(loadTheme)
   const [loginOpen, setLoginOpen] = useState(false)
   const [recoveryOpen, setRecoveryOpen] = useState(!!recovery)
   const [notice, setNotice] = useState<string | null>(initialNotice ?? null)
   const [fresh, setFresh] = useState<string | null>(null)
+
+  // свежие значения для обработчиков, которые живут дольше одной отрисовки
+  const ref = useRef({ userMap, postMap, lists, triesMap, uid })
+  useEffect(() => {
+    ref.current = { userMap, postMap, lists, triesMap, uid }
+  })
 
   // кто вошёл: следим за входом и выходом
   useEffect(() => {
@@ -327,63 +444,199 @@ export function StoreProvider({
     return () => data.subscription.unsubscribe()
   }, [])
 
-  // общие данные: авторы, посты, отзывы. Грузятся сразу, не дожидаясь проверки входа (они одинаковы для всех).
-  // Лента показывается, как только есть авторы, посты и отметки; ответы на отзывы (нужны только на странице идеи) — догружаются следом.
-  const loadedRef = useRef(loaded)
-  useEffect(() => {
-    let live = true
-    const rows: PublicRows = cached ? [...cached] : [[], [], [], []]
-    let main = false
-    let rest = false
-    const remember = () => main && rest && saveCache(rows)
-    Promise.all([restGet<ProfileRow[]>(PUBLIC_QUERIES[0]), restGet<PostRow[]>(PUBLIC_QUERIES[1]), restGet<TryRow[]>(PUBLIC_QUERIES[2])])
-      .then(([u, p, t]) => {
-        if (!live) return
-        setUsers(u.map(toUser))
-        setPosts(p.map(toPost))
-        setTries(t.map(toTry))
-        rows[0] = u
-        rows[1] = p
-        rows[2] = t
-        main = true
-        remember()
-        setFailed(false)
-        setLoaded(true)
-        loadedRef.current = true
-      })
-      // показываем прошлые данные — ошибку обновления не показываем
-      .catch(() => live && !loadedRef.current && setFailed(true))
-    restGet<ReplyRow[]>(PUBLIC_QUERIES[3])
-      .then((r) => {
-        if (!live) return
-        setReplies(r.map(toReply))
-        rows[3] = r
-        rest = true
-        remember()
-      })
-      .catch(() => {})
-    return () => {
-      live = false
-    }
-  }, [attempt, cached])
+  // ─── справочники: профили и идеи ───
+  const addUserRows = useCallback((rows: ProfileRow[]) => {
+    setUserMap((m) =>
+      merge(
+        m,
+        rows.map((r) => [r.id, toUser(r)]),
+      ),
+    )
+  }, [])
 
-  // вошёл человек, которого нет среди авторов (только что зарегистрировался) — подгружаем профили ещё раз
-  const askedProfile = useRef<string | null>(null)
-  useEffect(() => {
-    if (!uid || !loaded || users.some((u) => u.id === uid) || askedProfile.current === uid) return
-    askedProfile.current = uid
-    restGet<ProfileRow[]>(PUBLIC_QUERIES[0])
-      .then((u) => setUsers(u.map(toUser)))
-      .catch(() => {})
-  }, [uid, loaded, users])
+  // недостающие профили собираем и спрашиваем пачкой (много карточек появляются одновременно)
+  const wantUsers = useRef(new Set<string>())
+  const askedUsers = useRef(new Set<string>())
+  const userTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const ensureUsers = useCallback(
+    (ids: string[]) => {
+      for (const id of ids) if (id && !ref.current.userMap[id] && !askedUsers.current.has(id)) wantUsers.current.add(id)
+      if (!wantUsers.current.size || userTimer.current) return
+      userTimer.current = setTimeout(() => {
+        userTimer.current = null
+        const all = [...wantUsers.current]
+        wantUsers.current.clear()
+        all.forEach((id) => askedUsers.current.add(id))
+        for (const part of chunks(all, 80))
+          restGet<ProfileRow[]>(`profiles?select=*&id=in.(${part.join(',')})`)
+            .then(addUserRows)
+            .catch(() => part.forEach((id) => askedUsers.current.delete(id)))
+      }, 0)
+    },
+    [addUserRows],
+  )
 
-  // свои данные: папки, подписки
+  const addPostRows = useCallback(
+    (rows: PostRow[]) => {
+      if (!rows.length) return
+      setPostMap((m) =>
+        merge(
+          m,
+          rows.map((r) => [r.id, toPost(r)]),
+        ),
+      )
+      ensureUsers(rows.map((r) => r.author_id))
+    },
+    [ensureUsers],
+  )
+
+  const askedPosts = useRef(new Set<string>())
+  const ensurePosts = useCallback(
+    (ids: string[]) => {
+      const need = uniq(ids).filter((id) => !ref.current.postMap[id] && !askedPosts.current.has(id))
+      if (!need.length) return
+      need.forEach((id) => askedPosts.current.add(id))
+      for (const part of chunks(need, 80)) {
+        // свои скрытые видит только автор — для вошедшего спрашиваем с его пропуском
+        const q = ref.current.uid
+          ? supabase
+              .from('posts')
+              .select('*')
+              .in('id', part)
+              .then((r) => check(r).data as PostRow[])
+          : restGet<PostRow[]>(`posts?select=*&id=in.(${part.join(',')})`)
+        Promise.resolve(q)
+          .then(addPostRows)
+          .catch(() => part.forEach((id) => askedPosts.current.delete(id)))
+      }
+    },
+    [addPostRows],
+  )
+
+  // вошёл — свой профиль
+  useEffect(() => {
+    if (uid) ensureUsers([uid])
+  }, [uid, ensureUsers])
+
+  // ─── списки порциями ───
+  const gen = useRef<Record<string, number>>({})
+  const patchList = useCallback((key: string, fn: (l: PagedList) => Partial<PagedList>) => {
+    setLists((all) => {
+      const cur = all[key] ?? { ids: [], done: false, loading: false, error: false, loaded: false }
+      const next = { ...all, [key]: { ...cur, ...fn(cur) } }
+      ref.current.lists = next
+      return next
+    })
+  }, [])
+
+  const loadMore = useCallback(
+    (key: string, loader: Loader, reset = false) => {
+      const cur = ref.current.lists[key]
+      if (!reset && (cur?.loading || cur?.done)) return
+      const g = (gen.current[key] = (gen.current[key] ?? 0) + 1)
+      const offset = reset ? 0 : (cur?.ids.length ?? 0)
+      patchList(key, () => ({ loading: true, error: false }))
+      loader(offset, PAGE)
+        .then((rows) => {
+          if (gen.current[key] !== g) return
+          addPostRows(rows)
+          const ids = rows.map((r) => r.id)
+          patchList(key, (l) => ({
+            ids: reset ? uniq(ids) : uniq([...l.ids, ...ids]),
+            done: rows.length < PAGE,
+            loading: false,
+            loaded: true,
+          }))
+          // первая порция ленты «Для вас» — запоминаем для следующего захода (вместе с авторами)
+          if (key === homeKey(null, ref.current.uid) && offset === 0) {
+            const authors = uniq(rows.map((r) => r.author_id))
+            const users = authors
+              .map((id) => ref.current.userMap[id])
+              .filter(Boolean)
+              .map((u) => ({
+                id: u.id,
+                name: u.name,
+                handle: u.handle,
+                bio: u.bio,
+                colors: u.colors,
+                avatar_url: u.avatar ?? null,
+                followers_count: u.followers,
+              }))
+            saveJson(CACHE, { uid: ref.current.uid, seed: feedSeed, at: Date.now(), posts: rows, users } satisfies Cached)
+          }
+        })
+        .catch(() => {
+          if (gen.current[key] !== g) return
+          patchList(key, () => ({ loading: false, error: true }))
+        })
+    },
+    [addPostRows, patchList, feedSeed],
+  )
+
+  /** убрать идею из всех списков (удалили, «не интересно») */
+  const dropFromLists = useCallback((id: string, only?: (key: string) => boolean) => {
+    setLists((all) => {
+      const next: Record<string, PagedList> = {}
+      for (const [k, l] of Object.entries(all))
+        next[k] = (only ? only(k) : true) && l.ids.includes(id) ? { ...l, ids: l.ids.filter((x) => x !== id) } : l
+      ref.current.lists = next
+      return next
+    })
+  }, [])
+  /** новая своя идея — в начало своего профиля и подписок */
+  const prependTo = useCallback((keys: string[], id: string) => {
+    setLists((all) => {
+      const next = { ...all }
+      for (const k of keys) if (next[k]) next[k] = { ...next[k], ids: uniq([id, ...next[k].ids]) }
+      ref.current.lists = next
+      return next
+    })
+  }, [])
+
+  // ─── отзывы и ответы: только к открытой идее ───
+  const askedTries = useRef(new Set<string>())
+  const loadTries = useCallback(
+    (postId: string) => {
+      if (askedTries.current.has(postId)) return
+      askedTries.current.add(postId)
+      restGet<TryRow[]>(`tries?select=*&post_id=eq.${postId}&order=created_at.desc&limit=500`)
+        .then(async (rows) => {
+          const tries = rows.map(toTry)
+          setTriesMap((m) => ({ ...m, [postId]: tries }))
+          ensureUsers(tries.map((t) => t.userId))
+          if (!tries.length) return
+          const reps: ReplyRow[] = []
+          for (const part of chunks(
+            tries.map((t) => t.id),
+            80,
+          ))
+            reps.push(...(await restGet<ReplyRow[]>(`try_replies?select=*&try_id=in.(${part.join(',')})&order=created_at.asc`)))
+          setRepliesMap((m) => {
+            const next = { ...m }
+            for (const t of tries) next[t.id] = []
+            for (const r of reps.map(toReply)) next[r.tryId] = [...(next[r.tryId] ?? []), r]
+            return next
+          })
+          ensureUsers(reps.map((r) => r.user_id))
+        })
+        .catch(() => {
+          askedTries.current.delete(postId)
+          setTriesMap((m) => (m[postId] ? m : { ...m, [postId]: [] }))
+        })
+    },
+    [ensureUsers],
+  )
+
+  // ─── свои данные: папки, подписки, «не интересно», настройки уведомлений ───
   const [mineAttempt, setMineAttempt] = useState(0)
   const [mineFor, setMineFor] = useState<string | null>(null)
   useEffect(() => {
     if (!uid) {
       setFolders([])
       setFollows([])
+      setNotices([])
+      setNoticesLoaded(false)
+      setNotInterested(new Set(loadGuestNi()))
       return
     }
     let live = true
@@ -411,94 +664,96 @@ export function StoreProvider({
         setNotice('Не удалось загрузить ваши папки. Обновите страницу.')
         setMineFor(uid)
       })
-    return () => {
-      live = false
-    }
-  }, [uid, mineAttempt])
-
-  // свои скрытые идеи: сразу — из запомненного в прошлый раз, следом — свежие из базы (одновременно с папками, не после них)
-  useEffect(() => {
-    if (!uid) {
-      setHiddenMine([])
-      return
-    }
-    let live = true
-    setHiddenMine(loadHidden(uid).map(toPost))
     supabase
-      .from('posts')
-      .select('*')
-      .eq('author_id', uid)
-      .eq('hidden', true)
-      .then(({ data, error }) => {
-        if (!live || error || !data) return
-        saveHidden(uid, data as PostRow[])
-        setHiddenMine((data as PostRow[]).map(toPost))
-      })
-    return () => {
-      live = false
-    }
-  }, [uid, mineAttempt])
-
-  // все идеи для сайта: общие + свои скрытые (по дате, новые сверху)
-  const allPosts = useMemo(() => {
-    if (!hiddenMine.length) return posts
-    const ids = new Set(hiddenMine.map((p) => p.id))
-    return [...hiddenMine, ...posts.filter((p) => !ids.has(p.id))].sort((a, b) => b.createdAt - a.createdAt)
-  }, [posts, hiddenMine])
-
-  // живые обновления (Supabase Realtime, через проброс): что пришло — сразу на экран, без перезагрузки страницы
-  const usersRef = useRef(users)
-  const postsRef = useRef(allPosts)
-  useEffect(() => {
-    usersRef.current = users
-    postsRef.current = allPosts
-  }, [users, allPosts])
-  // автор нового отзыва или ответа мог зарегистрироваться после загрузки страницы — подгружаем его профиль
-  const needUser = useCallback((id: string) => {
-    if (usersRef.current.some((u) => u.id === id)) return
+      .from('not_interested')
+      .select('post_id')
+      .then(({ data }) => live && data && setNotInterested(new Set((data as { post_id: string }[]).map((x) => x.post_id))))
     supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', id)
+      .from('notification_settings')
+      .select('tried, reply, follower, saves, moderation')
       .maybeSingle()
+      .then(({ data }) => live && setNoticeSettings(data ? (data as NoticeSettings) : DEFAULT_SETTINGS))
+    // сколько непрочитанных — для колокольчика
+    supabase
+      .from('notifications')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(50)
       .then(({ data }) => {
-        if (data) setUsers((us) => (us.some((u) => u.id === id) ? us : [...us, toUser(data as ProfileRow)]))
+        if (!live || !data) return
+        const list = (data as NoticeRow[]).map(toNotice)
+        setNotices(list)
+        ensureUsers(list.map((n) => n.actorId ?? ''))
       })
-  }, [])
-  // новые отзывы «Я попробовал» и ответы на них — у всех
+    return () => {
+      live = false
+    }
+  }, [uid, mineAttempt, ensureUsers])
+
+  // идеи из папок — чтобы показать обложки и сами папки
   useEffect(() => {
+    ensurePosts(folders.flatMap((f) => f.postIds))
+  }, [folders, ensurePosts])
+
+  // ─── живые обновления (Supabase Realtime, через проброс): что пришло — сразу на экран, без перезагрузки ───
+  useEffect(() => {
+    const bump = (postId: string, d: number, ok: boolean) =>
+      setPostMap((m) =>
+        m[postId]
+          ? {
+              ...m,
+              [postId]: { ...m[postId], tries: Math.max(0, m[postId].tries + d), triesOk: Math.max(0, m[postId].triesOk + (ok ? d : 0)) },
+            }
+          : m,
+      )
     const ch = supabase
       .channel('tries')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'tries' }, ({ new: r }) => {
         const t = toTry(r as TryRow)
-        setTries((ts) => (ts.some((x) => x.id === t.id) ? ts : [t, ...ts]))
-        needUser(t.userId)
+        if (ref.current.triesMap[t.postId]?.some((x) => x.id === t.id)) return
+        bump(t.postId, 1, t.ok)
+        setTriesMap((m) => (m[t.postId] ? { ...m, [t.postId]: [t, ...m[t.postId]] } : m))
+        ensureUsers([t.userId])
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'tries' }, ({ old }) =>
-        setTries((ts) => ts.filter((x) => x.id !== old.id)),
+        setTriesMap((m) => {
+          for (const [pid, list] of Object.entries(m)) {
+            const t = list.find((x) => x.id === old.id)
+            if (t) {
+              bump(pid, -1, t.ok)
+              return { ...m, [pid]: list.filter((x) => x.id !== old.id) }
+            }
+          }
+          return m
+        }),
       )
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'try_replies' }, ({ new: r }) => {
         const x = toReply(r as ReplyRow)
-        setReplies((rs) => (rs.some((y) => y.id === x.id) ? rs : [...rs, x]))
-        needUser(x.userId)
+        setRepliesMap((m) => (m[x.tryId] ? (m[x.tryId].some((y) => y.id === x.id) ? m : { ...m, [x.tryId]: [...m[x.tryId], x] }) : m))
+        ensureUsers([x.userId])
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'try_replies' }, ({ old }) =>
-        setReplies((rs) => rs.filter((x) => x.id !== old.id)),
+        setRepliesMap((m) => {
+          for (const [tid, list] of Object.entries(m))
+            if (list.some((x) => x.id === old.id)) return { ...m, [tid]: list.filter((x) => x.id !== old.id) }
+          return m
+        }),
       )
       .subscribe()
     return () => {
       supabase.removeChannel(ch)
     }
-  }, [needUser])
-  // свои идеи: проверка после публикации закончилась — появились теги или идея скрыта (тогда — сообщение с причиной).
-  // Счётчики показов тоже меняют идею, поэтому заново берём её из базы, только пока теги не пришли или поменялось «скрыта»
+  }, [ensureUsers])
+
+  // свои идеи: проверка после публикации закончилась — появились теги или идея скрыта (тогда — сообщение с причиной);
+  // новые уведомления — в колокольчик
   useEffect(() => {
     if (!uid) return
     const ch = supabase
       .channel(`mine-${uid}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'posts', filter: `author_id=eq.${uid}` }, ({ new: r }) => {
-        const was = postsRef.current.find((p) => p.id === r.id)
-        if (!was || (!!r.hidden === !!was.hidden && was.ai?.meta)) return
+        const was = ref.current.postMap[r.id as string]
+        if (was && !!r.hidden === !!was.hidden && was.ai?.meta) return
         supabase
           .from('posts')
           .select('*')
@@ -507,16 +762,20 @@ export function StoreProvider({
           .then(({ data }) => {
             if (!data) return
             const p = toPost(data as PostRow)
-            setPosts((ps) => ps.map((x) => (x.id === p.id ? p : x)))
-            setHiddenMine((hs) => (p.hidden ? [p, ...hs.filter((x) => x.id !== p.id)] : hs.filter((x) => x.id !== p.id)))
-            if (p.hidden && !postsRef.current.find((x) => x.id === p.id)?.hidden) setNotice(`Идея «${p.title}» скрыта: ${p.hidden}`)
+            setPostMap((m) => ({ ...m, [p.id]: p }))
+            if (p.hidden && !was?.hidden) setNotice(`Идея «${p.title}» скрыта: ${p.hidden}`)
           })
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${uid}` }, ({ new: r }) => {
+        const n = toNotice(r as NoticeRow)
+        setNotices((list) => (list.some((x) => x.id === n.id) ? list : [n, ...list]))
+        if (n.actorId) ensureUsers([n.actorId])
       })
       .subscribe()
     return () => {
       supabase.removeChannel(ch)
     }
-  }, [uid])
+  }, [uid, ensureUsers])
 
   // тема
   useEffect(() => {
@@ -535,25 +794,21 @@ export function StoreProvider({
     return () => mq.removeEventListener('change', apply)
   }, [theme])
 
-  const usersById = useMemo(() => new Map(users.map((u) => [u.id, u])), [users])
-  const me: User = (uid && usersById.get(uid)) || (uid ? { ...GUEST, id: uid, name: email.split('@')[0] } : GUEST)
+  const me: User = (uid && userMap[uid]) || (uid ? { ...GUEST, id: uid, name: email.split('@')[0] } : GUEST)
+  const user = useCallback((id: string) => userMap[id] ?? { ...GUEST, id, name: 'Автор' }, [userMap])
+  const hasUser = useCallback((id: string) => !!userMap[id], [userMap])
+  const post = useCallback((id: string) => postMap[id], [postMap])
+  const triesOf = useCallback((postId: string) => triesMap[postId], [triesMap])
+  const repliesOf = useCallback((tryId: string) => repliesMap[tryId] ?? [], [repliesMap])
+  const unread = useMemo(() => notices.filter((n) => !n.read).length, [notices])
 
-  const user = useCallback((id: string) => usersById.get(id) ?? { ...GUEST, id, name: 'Автор' }, [usersById])
-  const post = useCallback((id: string) => allPosts.find((p) => p.id === id), [allPosts])
-  const triesOf = useCallback(
-    (postId: string) => tries.filter((t) => t.postId === postId).sort((a, b) => b.createdAt - a.createdAt),
-    [tries],
-  )
-  const repliesOf = useCallback((tryId: string) => replies.filter((r) => r.tryId === tryId), [replies])
-
-  /** Сохранение в базе; при ошибке — сообщение и свежие данные с сервера */
+  /** Сохранение в базе; при ошибке — сообщение и свежие свои данные с сервера */
   const save = (req: PromiseLike<{ error: unknown }>) => {
     Promise.resolve(req)
       .then(check)
       .catch(() => {
         setNotice('Не получилось сохранить. Проверьте интернет и попробуйте ещё раз.')
         setMineAttempt((n) => n + 1)
-        setAttempt((n) => n + 1)
       })
   }
 
@@ -588,35 +843,42 @@ export function StoreProvider({
 
   /** счётчик «в избранном» на сайте сразу, не дожидаясь базы (в базе его считает сама база) */
   const bumpSaves = (pid: string, d: number) =>
-    setPosts((ps) => ps.map((p) => (p.id === pid ? { ...p, saves: Math.max(0, p.saves + d) } : p)))
+    setPostMap((m) => (m[pid] ? { ...m, [pid]: { ...m[pid], saves: Math.max(0, m[pid].saves + d) } } : m))
 
   const value: Store = {
-    // проверка входа идёт одновременно с загрузкой данных, ждём обе — чтобы не мигала кнопка «Войти»
-    ready: loaded && authKnown,
-    loaded,
     authReady: authKnown,
     mineReady: authKnown && (!uid || mineFor === uid),
-    failed,
-    retry: () => setAttempt((n) => n + 1),
     authed: !!uid,
     email,
     me,
-    users,
-    posts: allPosts,
-    tries,
-    replies,
     folders,
     follows,
     theme,
     user,
+    hasUser,
     post,
+    ensurePosts,
+    ensureUsers,
+    addPostRows,
+    addUserRows,
+    lists,
+    loadMore,
+    feedSeed,
     triesOf,
     repliesOf,
+    loadTries,
     toggleFollow: (id) => {
       if (needLogin()) return
       const on = follows.includes(id)
       setFollows((f) => (on ? f.filter((x) => x !== id) : [...f, id]))
-      setUsers((us) => us.map((u) => (u.id === id ? { ...u, followers: Math.max(0, u.followers + (on ? -1 : 1)) } : u)))
+      setUserMap((m) => (m[id] ? { ...m, [id]: { ...m[id], followers: Math.max(0, m[id].followers + (on ? -1 : 1)) } } : m))
+      // подписки изменились — лента подписок соберётся заново
+      setLists((all) => {
+        const next = { ...all }
+        delete next.following
+        ref.current.lists = next
+        return next
+      })
       save(
         on
           ? supabase.from('follows').delete().eq('follower_id', uid).eq('following_id', id)
@@ -626,7 +888,18 @@ export function StoreProvider({
     uploadImg: (img, withThumb) => upload(img, withThumb),
     checkImg: async (img, purpose) => {
       const { data, error } = await supabase.functions.invoke('publish', { body: { action: 'check-image', img, purpose } })
-      if (error || typeof data?.ok !== 'boolean') throw new Error('проверка недоступна')
+      if (error) {
+        // заблокирован и т. п. — причина от сервера
+        let reasons: string[] | undefined
+        try {
+          reasons = (await (error as { context?: Response }).context?.json())?.reasons
+        } catch {
+          /* нет ответа */
+        }
+        if (reasons?.length) return { ok: false, reasons, topics: [], title: '' }
+        throw new Error('проверка недоступна')
+      }
+      if (typeof data?.ok !== 'boolean') throw new Error('проверка недоступна')
       return {
         ok: data.ok,
         reasons: data.reasons ?? [],
@@ -638,24 +911,35 @@ export function StoreProvider({
     addPost: async (data) => {
       if (!uid) throw new Error('not signed in')
       const images = await Promise.all(data.images.map((i) => upload(i, true)))
-      const p = toPost((await publish({ action: 'post', type: data.type, topics: data.topics, title: data.title, images })) as PostRow)
-      setPosts((ps) => [p, ...ps])
-      setFresh(p.id)
-      setTimeout(() => setFresh((f) => (f === p.id ? null : f)), 3000)
-      return p.id
+      const row = (await publish({ action: 'post', type: data.type, topics: data.topics, title: data.title, images })) as PostRow
+      addPostRows([row])
+      prependTo([`profile:${uid}`, 'following'], row.id)
+      setFresh(row.id)
+      setTimeout(() => setFresh((f) => (f === row.id ? null : f)), 3000)
+      return row.id
     },
     fresh,
     deletePost: async (id) => {
       await publish({ action: 'delete-post', postId: id })
-      setPosts((ps) => ps.filter((p) => p.id !== id))
-      setHiddenMine((hs) => hs.filter((p) => p.id !== id))
-      setTries((ts) => ts.filter((t) => t.postId !== id))
+      dropFromLists(id)
+      setPostMap((m) => {
+        const next = { ...m }
+        delete next[id]
+        return next
+      })
       setFolders((fs) => fs.map((f) => ({ ...f, postIds: f.postIds.filter((x) => x !== id), done: f.done.filter((x) => x !== id) })))
     },
     addTry: async (postId, ok, text, img) => {
       if (!uid) throw new Error('not signed in')
-      const row = await publish({ action: 'try', postId, ok, text: text ?? '', img: img ? await upload(img) : undefined })
-      setTries((ts) => [toTry(row as TryRow), ...ts])
+      const row = (await publish({ action: 'try', postId, ok, text: text ?? '', img: img ? await upload(img) : undefined })) as TryRow
+      const t = toTry(row)
+      if (!ref.current.triesMap[postId]?.some((x) => x.id === t.id)) {
+        setTriesMap((m) => ({ ...m, [postId]: [t, ...(m[postId] ?? [])] }))
+        setRepliesMap((m) => ({ ...m, [t.id]: [] }))
+        setPostMap((m) =>
+          m[postId] ? { ...m, [postId]: { ...m[postId], tries: m[postId].tries + 1, triesOk: m[postId].triesOk + (ok ? 1 : 0) } } : m,
+        )
+      }
     },
     addReply: async (tryId, text) => {
       if (!uid) {
@@ -663,7 +947,7 @@ export function StoreProvider({
         throw new Error('not signed in')
       }
       const r = toReply((await publish({ action: 'reply', tryId, text })) as ReplyRow)
-      setReplies((rs) => [...rs, r])
+      setRepliesMap((m) => ((m[tryId] ?? []).some((y) => y.id === r.id) ? m : { ...m, [tryId]: [...(m[tryId] ?? []), r] }))
     },
     saveTo: (fid, pid) => {
       if (needLogin()) return
@@ -700,6 +984,77 @@ export function StoreProvider({
       save(supabase.from('folder_items').update({ done }).eq('folder_id', fid).eq('post_id', pid))
     },
     savedIn: (pid) => folders.filter((f) => f.postIds.includes(pid)),
+
+    notInterested,
+    markNotInterested: (pid) => {
+      setNotInterested((s) => new Set(s).add(pid))
+      dropFromLists(pid, (k) => k.startsWith('home:'))
+      if (uid) save(supabase.from('not_interested').upsert({ user_id: uid, post_id: pid }, { ignoreDuplicates: true }))
+      else saveJson(GUEST_NI, [...loadGuestNi(), pid])
+    },
+    undoNotInterested: (pid) => {
+      setNotInterested((s) => {
+        const n = new Set(s)
+        n.delete(pid)
+        return n
+      })
+      if (uid) save(supabase.from('not_interested').delete().eq('user_id', uid).eq('post_id', pid))
+      else
+        saveJson(
+          GUEST_NI,
+          loadGuestNi().filter((x) => x !== pid),
+        )
+    },
+    report: async (type, id, reason, comment, link) => {
+      if (!uid) {
+        setLoginOpen(true)
+        return 'Нужно войти'
+      }
+      const { error } = await supabase.from('reports').insert({
+        reporter_id: uid,
+        target_type: type,
+        target_id: id,
+        reason,
+        comment: comment.trim().slice(0, 500) || null,
+        link: link.trim().slice(0, 500) || null,
+      })
+      if (!error) return null
+      if (error.code === '23505') return 'already'
+      if (error.code === '42501') return 'Ваш аккаунт заблокирован — жаловаться нельзя'
+      return 'Не получилось отправить. Проверьте интернет и попробуйте ещё раз.'
+    },
+
+    notices,
+    unread,
+    noticesLoaded,
+    loadNotices: () => {
+      if (!uid) return
+      // сначала база досчитывает сводку сохранений за прошедшие дни, потом берём список
+      Promise.resolve(supabase.rpc('notifications_digest'))
+        .catch(() => {})
+        .then(() => supabase.from('notifications').select('*').order('created_at', { ascending: false }).limit(100))
+        .then((r) => {
+          if (!r || r.error || !r.data) return
+          const list = (r.data as NoticeRow[]).map(toNotice)
+          setNotices(list)
+          setNoticesLoaded(true)
+          ensureUsers(list.map((n) => n.actorId ?? ''))
+          ensurePosts(list.map((n) => n.postId ?? ''))
+        })
+    },
+    markNoticesRead: () => {
+      if (!uid || !notices.some((n) => !n.read)) return
+      setNotices((list) => list.map((n) => (n.read ? n : { ...n, read: true })))
+      save(supabase.from('notifications').update({ read: true }).eq('user_id', uid).eq('read', false))
+    },
+    noticeSettings,
+    saveNoticeSettings: (patch) => {
+      if (needLogin()) return
+      const next = { ...noticeSettings, ...patch }
+      setNoticeSettings(next)
+      save(supabase.from('notification_settings').upsert({ user_id: uid, ...next }, { onConflict: 'user_id' }))
+    },
+
     setTheme: setThemeState,
     signIn: async (address, password) => {
       const { error } = await supabase.auth.signInWithPassword({ email: address, password })
@@ -744,7 +1099,7 @@ export function StoreProvider({
       } catch (e) {
         return e instanceof Rejected ? e.reasons.join('. ') : 'Не получилось сохранить'
       }
-      setUsers((us) => us.map((u) => (u.id === uid ? toUser(row) : u)))
+      addUserRows([row])
       return null
     },
     loginOpen,

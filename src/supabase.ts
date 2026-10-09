@@ -89,3 +89,8 @@ export async function finishEmailLink(): Promise<{ error: string | null; recover
   if (params.get('error') || error) return { error: 'Ссылка из письма не сработала. Запросите новую.', recovery: false }
   return { error: null, recovery: params.get('type') === 'recovery' }
 }
+
+/** Разбудить проверку заранее (открыли «Новая идея»): функция запускается и входит в ИИ, пока человек выбирает картинку */
+export function warmChecks() {
+  supabase.functions.invoke('publish', { body: { action: 'warm' } }).catch(() => {})
+}

@@ -332,19 +332,22 @@ async function aiCheckText(text: string, note = ''): Promise<Verdict> {
 }
 
 async function aiCheckImage(src: string, allowPeople = false, tm: Timing = {}): Promise<Verdict> {
-  let t = performance.now()
-  const img = await fetch(src)
-  if (!img.ok) throw new Error(`не удалось скачать картинку ${src}`)
-  const bytes = await img.arrayBuffer()
-  tm.download = ms(t)
+  // скачать картинку и войти в ГигаЧат — одновременно
+  const t0 = performance.now()
+  const [{ bytes, type }, auth] = await Promise.all([
+    fetch(src).then(async (img) => {
+      if (!img.ok) throw new Error(`не удалось скачать картинку ${src}`)
+      const bytes = await img.arrayBuffer()
+      tm.download = ms(t0)
+      return { bytes, type: img.headers.get('content-type') ?? 'image/jpeg' }
+    }),
+    gcToken().then((a) => ((tm.login = ms(t0)), a)),
+  ])
   tm.kb = Math.round(bytes.byteLength / 1024)
-  t = performance.now()
-  const auth = await gcToken()
-  tm.login = ms(t)
   const form = new FormData()
-  form.append('file', new Blob([bytes], { type: img.headers.get('content-type') ?? 'image/jpeg' }), 'image.jpg')
+  form.append('file', new Blob([bytes], { type }), 'image.jpg')
   form.append('purpose', 'general')
-  t = performance.now()
+  const t = performance.now()
   const up = await gcFetch(`${GC_API}/files`, { method: 'POST', headers: { Authorization: `Bearer ${auth}` }, body: form })
   if (!up.ok) throw new Error(`GigaChat: картинка не загрузилась (${up.status}) ${(await up.text()).slice(0, 200)}`)
   const { id } = await up.json()
@@ -540,6 +543,20 @@ export async function handle(req: Request): Promise<Response> {
     body = await req.json()
   } catch {
     return json({ ok: false, reasons: ['Неверный запрос'] }, 400)
+  }
+
+  // разогрев: сайт зовёт, когда открывают «Новая идею», — функция запускается и заранее входит в ГигаЧат,
+  // чтобы первая проверка картинки не ждала запуска и входа. Вход запоминается на ~30 минут, так что лишних входов нет.
+  if (body.action === 'warm') {
+    const t = performance.now()
+    const wasCold = cold
+    cold = false
+    try {
+      await gcToken()
+    } catch {
+      /* ИИ недоступен — проверка потом сама скажет */
+    }
+    return json({ ok: true, cold: wasCold, ms: ms(t) })
   }
 
   // проверка имени и ника перед регистрацией (входа ещё нет)

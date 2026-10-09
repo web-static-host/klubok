@@ -8,6 +8,7 @@ import { cx, fileToImg } from '../lib'
 import { Sheet } from './Sheet'
 import { RulesLink } from './RulesSheet'
 import { useCheckedImages, type CheckedImg } from './useCheckedImages'
+import { warmChecks } from '../supabase'
 import { Button } from './ui'
 import { TopicPicker } from './TopicPicker'
 
@@ -60,6 +61,8 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
   // пока окно открыто: картинку, брошенную мимо, браузер не открывает; Ctrl+V вставляет картинку
   useEffect(() => {
     if (!open) return
+    // окно открыли — будим проверку заранее, чтобы первая картинка не ждала запуска функции и входа в ИИ
+    warmChecks()
     const stop = (e: DragEvent) => e.preventDefault()
     const paste = (e: ClipboardEvent) => {
       const files = [...(e.clipboardData?.files ?? [])]

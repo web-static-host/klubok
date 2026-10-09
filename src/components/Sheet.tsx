@@ -17,7 +17,8 @@ export function Sheet({
   onClose: () => void
   title: string
   children: ReactNode
-  wide?: boolean
+  /** шире обычного; 'xl' — для формы в две колонки (создание идеи) */
+  wide?: boolean | 'xl'
 }) {
   const panel = useRef<HTMLDivElement>(null)
   // onClose часто новая функция на каждое нажатие клавиши — храним последнюю, а не перезапускаем окно
@@ -69,7 +70,7 @@ export function Sheet({
           'relative flex max-h-[90dvh] w-full flex-col bg-bg outline-none',
           'sheet-up rounded-t-3xl border-t border-white/5 shadow-[0_-8px_32px_rgba(0,0,0,0.4)]',
           'md:rounded-3xl md:border md:border-line md:shadow-2xl',
-          wide ? 'md:max-w-2xl' : 'md:max-w-md',
+          wide === 'xl' ? 'md:max-w-5xl' : wide ? 'md:max-w-2xl' : 'md:max-w-md',
         )}
       >
         <div className="mx-auto mt-2 mb-1 h-1 w-10 rounded-full bg-ink/20 md:hidden" />

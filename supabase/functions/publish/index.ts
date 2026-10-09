@@ -172,6 +172,24 @@ export interface Meta {
   related: string[]
   difficulty: '' | 'легко' | 'средне' | 'сложно'
   time: '' | 'быстро' | 'около часа' | 'долго'
+  /** подходящие категории сайта (id из TOPICS), до 5 — сайт ставит их автору в форме, автор может поправить */
+  topics: string[]
+}
+/** Категории сайта — как TOPICS в src/data/types.ts (менять вместе) */
+const TOPICS: [string, string][] = [
+  ['recipes', 'Рецепты'], ['baking', 'Выпечка'], ['desserts', 'Десерты'], ['breakfast', 'Завтраки'], ['drinks', 'Напитки'],
+  ['preserves', 'Заготовки'], ['grill', 'Мангал и костёр'], ['hacks', 'Лайфхаки'], ['cleaning', 'Уборка'], ['storage', 'Хранение'],
+  ['home', 'Дом и уют'], ['interior', 'Интерьер'], ['repair', 'Ремонт'], ['diy', 'Своими руками'], ['crafts', 'Рукоделие'],
+  ['knitting', 'Вязание'], ['sewing', 'Шитьё'], ['decor', 'Декор'], ['holidays', 'Праздники'], ['gifts', 'Подарки'],
+  ['garden', 'Сад и огород'], ['plants', 'Комнатные растения'], ['kids', 'Для детей'], ['pets', 'Питомцы'],
+]
+/** ИИ мог написать id или название — приводим к id; чужие слова отбрасываем */
+function topicIds(v: unknown): string[] {
+  const out = (Array.isArray(v) ? v : [])
+    .map((t) => norm(t))
+    .map((t) => TOPICS.find(([id, label]) => id === t || norm(label) === t)?.[0])
+    .filter((t): t is string => !!t)
+  return [...new Set(out)].slice(0, 5)
 }
 const LISTS = ['main', 'techniques', 'tools', 'occasion', 'style', 'related'] as const
 const KINDS = [
@@ -205,6 +223,7 @@ export function parseMeta(v: Record<string, unknown>): Meta {
     related: list(v.related, 6),
     difficulty: (['легко', 'средне', 'сложно'] as const).find((x) => x === difficulty) ?? '',
     time: (['быстро', 'около часа', 'долго'] as const).find((x) => time.startsWith(x)) ?? '',
+    topics: topicIds(v.topics),
   }
 }
 export const emptyMeta = (): Meta => parseMeta({})
@@ -217,6 +236,7 @@ export function mergeMeta(metas: Meta[]): Meta {
     m.kind ||= x.kind
     m.difficulty ||= x.difficulty
     m.time ||= x.time
+    m.topics = [...new Set([...m.topics, ...x.topics])].slice(0, 5)
     for (const k of LISTS) m[k] = [...new Set([...m[k], ...x[k]])]
   }
   for (const k of LISTS) m[k] = m[k].slice(0, k === 'main' || k === 'related' ? 10 : 6)
@@ -328,7 +348,8 @@ ok = false ставь только при явном нарушении прав
  "style": ["0–3 характер и стиль: сливочное, острое, постное, вегетарианское, полезное; скандинавский, минимализм, винтаж"],
  "related": ["3–6 общих тем, по которым человеку можно посоветовать похожее: морепродукты, блюда на сковороде, ужин за 30 минут, хранение на кухне"],
  "difficulty": "легко, средне или сложно",
- "time": "быстро, около часа или долго"}`,
+ "time": "быстро, около часа или долго",
+ "topics": ["1–5 подходящих категорий сайта, только из этого списка, пиши id: ${TOPICS.map(([id, label]) => `${id} — ${label}`).join(', ')}"]}`,
       'Проверь картинку по правилам и опиши её.',
       [id],
       allowPeople,
@@ -514,7 +535,8 @@ export async function handle(req: Request): Promise<Response> {
       const img = body.img as ImgIn | undefined
       if (!ownImage(img, uid)) return json({ ok: false, reasons: ['Неверная картинка'] }, 400)
       const c = await checkImage(img, uid, body.purpose === 'avatar')
-      return json(c.ok ? { ok: true, ai: c.ai } : { ok: false, reasons: c.reasons })
+      // topics — категории, которые ИИ предлагает по этой картинке (форма ставит их сама)
+      return json(c.ok ? { ok: true, ai: c.ai, topics: c.meta.topics } : { ok: false, reasons: c.reasons })
     }
 
     case 'post': {

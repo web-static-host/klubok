@@ -119,7 +119,7 @@ export function PostPage() {
             {p.hidden && (
               <div className="mb-3 rounded-2xl bg-rose-500/10 px-4 py-3 text-sm text-rose-500" role="alert">
                 <p className="font-bold">Идея скрыта — её видите только вы</p>
-                <p className="mt-0.5">{p.hidden}. Удалите её и опубликуйте снова без этого.</p>
+                <p className="mt-0.5">{p.hidden}. Удалите её и опубликуйте снова.</p>
               </div>
             )}
             <div className="mb-3 flex flex-wrap gap-2">

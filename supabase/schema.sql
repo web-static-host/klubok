@@ -4,7 +4,7 @@
 
 -- ─── Очистка ────────────────────────────────────────────────
 drop trigger if exists on_auth_user_created on auth.users;
-drop table if exists image_checks, try_replies, likes, follows, folder_items, folders, tries, posts, profiles cascade;
+drop table if exists ai_tokens, image_checks, try_replies, likes, follows, folder_items, folders, tries, posts, profiles cascade;
 drop function if exists handle_new_user, bump_post_likes, bump_post_saves, bump_followers, bump_post_tries, track_posts cascade;
 drop type if exists post_type, post_topic cascade;
 
@@ -122,6 +122,14 @@ create table image_checks (
 );
 -- читать и писать может только функция publish
 alter table image_checks enable row level security;
+
+-- ─── Пропуск в ГигаЧат (общий для всех копий функции publish; только для неё) ───
+create table ai_tokens (
+  id text primary key,
+  value text not null,
+  exp bigint not null
+);
+alter table ai_tokens enable row level security;
 
 -- ─── Подписки ───────────────────────────────────────────────
 create table follows (

@@ -130,8 +130,17 @@ function gcFetch(url: string, init: RequestInit = {}) {
 }
 
 let token: { value: string; exp: number } | undefined
+/**
+ * Пропуск в ГигаЧат (действует ~30 минут). Supabase часто запускает для запроса новую копию функции,
+ * и пропуск в памяти ей не достаётся, — поэтому он хранится ещё и в базе (ai_tokens): взять оттуда — ~0,05 с, войти заново — ~0,9 с.
+ */
 async function gcToken() {
   if (token && token.exp - 60_000 > Date.now()) return token.value
+  const { data: saved } = await admin.from('ai_tokens').select('value, exp').eq('id', 'gigachat').maybeSingle()
+  if (saved && Number(saved.exp) - 60_000 > Date.now()) {
+    token = { value: saved.value, exp: Number(saved.exp) }
+    return token.value
+  }
   if (!GC_KEY) throw new Error('не задан секрет GIGACHAT_AUTH_KEY')
   const res = await gcFetch(GC_OAUTH, {
     method: 'POST',
@@ -146,6 +155,7 @@ async function gcToken() {
   if (!res.ok) throw new Error(`GigaChat: вход не удался (${res.status}) ${(await res.text()).slice(0, 200)}`)
   const data = await res.json()
   token = { value: data.access_token, exp: Number(data.expires_at) || Date.now() + 25 * 60_000 }
+  await admin.from('ai_tokens').upsert({ id: 'gigachat', value: token.value, exp: token.exp })
   return token.value
 }
 
@@ -527,6 +537,8 @@ const str = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().repla
 
 export async function handle(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
+  // замеры (ТЕСТ): запуск копии функции и проверка, кто вошёл, — до самой работы
+  const boot = cold ? Math.round(performance.now()) : 0
 
   if (req.method === 'GET') {
     // проверка связи с GigaChat
@@ -572,7 +584,9 @@ export async function handle(req: Request): Promise<Response> {
   }
 
   const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
+  const tAuth = performance.now()
   const { data: auth } = await admin.auth.getUser(jwt)
+  const authMs = ms(tAuth)
   const uid = auth?.user?.id
   if (!uid) return json({ ok: false, reasons: ['Нужно войти'] }, 401)
 
@@ -589,8 +603,9 @@ export async function handle(req: Request): Promise<Response> {
       // первый запрос после простоя: функция только что запустилась («холодный старт»)
       if (cold) {
         tm.cold = 1
-        tm.boot = Math.round(performance.now())
+        tm.boot = boot
       }
+      tm.auth = authMs
       cold = false
       const t = performance.now()
       const c = await checkImage(img, uid, body.purpose === 'avatar', tm)

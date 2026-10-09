@@ -19,8 +19,14 @@ export interface NewPost {
 }
 
 interface Store {
-  /** загрузка закончена */
+  /** загрузка закончена: общие данные есть и известно, вошёл ли человек */
   ready: boolean
+  /** общие данные (лента, авторы, отзывы) есть — из прошлого захода или уже загружены */
+  loaded: boolean
+  /** известно, вошёл ли человек */
+  authReady: boolean
+  /** свои данные (папки, подписки) загружены; гостю — сразу, как только известно, что он гость */
+  mineReady: boolean
   /** не удалось загрузить данные */
   failed: boolean
   retry: () => void
@@ -330,8 +336,9 @@ export function StoreProvider({
       .catch(() => {})
   }, [uid, loaded, users])
 
-  // свои данные: папки, подписки, лайки
+  // свои данные: папки, подписки
   const [mineAttempt, setMineAttempt] = useState(0)
+  const [mineFor, setMineFor] = useState<string | null>(null)
   useEffect(() => {
     if (!uid) {
       setFolders([])
@@ -356,8 +363,13 @@ export function StoreProvider({
           })),
         )
         setFollows((check(fo).data as { following_id: string }[]).map((x) => x.following_id))
+        setMineFor(uid)
       })
-      .catch(() => live && setNotice('Не удалось загрузить ваши папки. Обновите страницу.'))
+      .catch(() => {
+        if (!live) return
+        setNotice('Не удалось загрузить ваши папки. Обновите страницу.')
+        setMineFor(uid)
+      })
     return () => {
       live = false
     }
@@ -426,6 +438,9 @@ export function StoreProvider({
   const value: Store = {
     // проверка входа идёт одновременно с загрузкой данных, ждём обе — чтобы не мигала кнопка «Войти»
     ready: loaded && authKnown,
+    loaded,
+    authReady: authKnown,
+    mineReady: authKnown && (!uid || mineFor === uid),
     failed,
     retry: () => setAttempt((n) => n + 1),
     authed: !!uid,

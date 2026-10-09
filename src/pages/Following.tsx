@@ -7,6 +7,7 @@ import { num, plural, timeAgo } from '../lib'
 import { MobileTop } from '../components/Layout'
 import { Avatar, Button, Empty, TopicBadge } from '../components/ui'
 import { Gallery } from '../components/Gallery'
+import { Bone, FeedCardSkeleton } from '../components/Skeleton'
 
 /** Лента подписок — одна колонка, как в Instagram (DESIGN_WEB 3.4) */
 function FeedCard({ post }: { post: Post }) {
@@ -76,7 +77,7 @@ function FeedCard({ post }: { post: Post }) {
 }
 
 export function Following() {
-  const { posts, follows, users, toggleFollow, me } = useStore()
+  const { posts, follows, users, toggleFollow, me, loaded, mineReady } = useStore()
   const list = posts.filter((p) => follows.includes(p.authorId) || p.authorId === me.id).sort((a, b) => b.createdAt - a.createdAt)
   const suggest = users.filter((u) => u.id !== me.id && !follows.includes(u.id)).slice(0, 4)
 
@@ -84,29 +85,46 @@ export function Following() {
     <>
       <MobileTop title="Подписки" />
       <div className="mx-auto flex max-w-[560px] flex-col gap-4 px-3 md:pt-6">
-        {suggest.length > 0 && (
-          <section aria-label="Кого почитать" className="card p-3">
-            <p className="section-label mb-2">Кого почитать</p>
-            <div className="no-scrollbar -mx-1 flex gap-2 overflow-x-auto px-1">
-              {suggest.map((u) => (
-                <div key={u.id} className="flex w-32 shrink-0 flex-col items-center rounded-2xl border border-line p-3 text-center">
-                  <Link to={`/u/${u.id}`} className="flex flex-col items-center rounded-xl">
-                    <Avatar user={u} size={48} />
-                    <span className="mt-2 line-clamp-1 text-xs font-bold">{u.name}</span>
-                    <span className="text-[11px]">{num(u.followers)} подп.</span>
-                  </Link>
-                  <Button size="sm" kind="secondary" className="mt-2 h-8 w-full px-2 text-xs" onClick={() => toggleFollow(u.id)}>
-                    Подписаться
-                  </Button>
-                </div>
-              ))}
+        {!loaded || !mineReady ? (
+          <>
+            <div className="card p-3" role="status" aria-label="Загрузка">
+              <Bone className="mb-3 h-3 w-28" />
+              <div className="flex gap-2 overflow-hidden">
+                {[0, 1, 2, 3].map((i) => (
+                  <Bone key={i} className="h-[142px] w-32 shrink-0 rounded-2xl" />
+                ))}
+              </div>
             </div>
-          </section>
-        )}
-        {list.length ? (
-          list.map((p) => <FeedCard key={p.id} post={p} />)
+            <FeedCardSkeleton />
+            <FeedCardSkeleton />
+          </>
         ) : (
-          <Empty icon={Users}>Подпишитесь на авторов — их идеи появятся здесь.</Empty>
+          <>
+            {suggest.length > 0 && (
+              <section aria-label="Кого почитать" className="card p-3">
+                <p className="section-label mb-2">Кого почитать</p>
+                <div className="no-scrollbar -mx-1 flex gap-2 overflow-x-auto px-1">
+                  {suggest.map((u) => (
+                    <div key={u.id} className="flex w-32 shrink-0 flex-col items-center rounded-2xl border border-line p-3 text-center">
+                      <Link to={`/u/${u.id}`} className="flex flex-col items-center rounded-xl">
+                        <Avatar user={u} size={48} />
+                        <span className="mt-2 line-clamp-1 text-xs font-bold">{u.name}</span>
+                        <span className="text-[11px]">{num(u.followers)} подп.</span>
+                      </Link>
+                      <Button size="sm" kind="secondary" className="mt-2 h-8 w-full px-2 text-xs" onClick={() => toggleFollow(u.id)}>
+                        Подписаться
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+            {list.length ? (
+              list.map((p) => <FeedCard key={p.id} post={p} />)
+            ) : (
+              <Empty icon={Users}>Подпишитесь на авторов — их идеи появятся здесь.</Empty>
+            )}
+          </>
         )}
       </div>
     </>

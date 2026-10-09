@@ -9,6 +9,7 @@ import { cx, num, plural, timeAgo } from '../lib'
 import { Masonry } from '../components/Masonry'
 import { Gallery } from '../components/Gallery'
 import { Sheet } from '../components/Sheet'
+import { PostSkeleton } from '../components/Skeleton'
 import { Avatar, Button, Empty, IconButton, Picture } from '../components/ui'
 
 /** Сколько отзывов видно сразу; остальные — по кнопке */
@@ -18,7 +19,7 @@ export function PostPage() {
   const { id = '' } = useParams()
   const [params] = useSearchParams()
   const nav = useNavigate()
-  const { post, user, triesOf, toggleFollow, follows, savedIn, posts, me, deletePost } = useStore()
+  const { post, user, triesOf, toggleFollow, follows, savedIn, posts, me, deletePost, loaded } = useStore()
   const { openSave, openTried, toast } = useUi()
   const [allTries, setAllTries] = useState(false)
   const [askDelete, setAskDelete] = useState(false)
@@ -37,7 +38,7 @@ export function PostPage() {
     if (params.get('tab') === 'tries') triesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [params, id])
 
-  if (!p) return <Empty icon={SearchX}>Такой идеи нет или её удалили.</Empty>
+  if (!p) return loaded ? <Empty icon={SearchX}>Такой идеи нет или её удалили.</Empty> : <PostSkeleton />
 
   const a = user(p.authorId)
   const tries = triesOf(p.id)

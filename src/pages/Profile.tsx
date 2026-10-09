@@ -11,6 +11,7 @@ import { LoginForm } from '../components/LoginSheet'
 import { AvatarCropper } from '../components/AvatarCropper'
 import { useCheckedImages } from '../components/useCheckedImages'
 import { FolderCard, NewFolderButton } from './Folders'
+import { FoldersSkeleton, MasonrySkeleton, ProfileHeadSkeleton } from '../components/Skeleton'
 
 type Tab = 'posts' | 'folders' | 'tried'
 
@@ -22,6 +23,18 @@ export function Profile({ self }: { self?: boolean }) {
   const mine = s.authed && u.id === s.me.id
   const [tab, setTab] = useState<Tab>('posts')
   const [editing, setEditing] = useState(false)
+
+  // ещё не знаем, вошёл ли человек, или нет данных — заглушка в разметке профиля (а не форма входа и не «никого»)
+  if ((self && !s.authReady) || !s.loaded)
+    return (
+      <div className="px-2 pt-3 sm:px-3 md:px-4 md:pt-8 lg:px-6">
+        {!self && <div className="mb-2 h-10" />}
+        <ProfileHeadSkeleton />
+        <div className="mt-5">
+          <MasonrySkeleton rows={2} />
+        </div>
+      </div>
+    )
 
   if (self && !s.authed)
     return (
@@ -107,11 +120,15 @@ export function Profile({ self }: { self?: boolean }) {
             <div className="mb-3 flex justify-end">
               <NewFolderButton />
             </div>
-            <div className="grid grid-cols-2 gap-x-3 gap-y-5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-              {s.folders.map((f) => (
-                <FolderCard key={f.id} f={f} />
-              ))}
-            </div>
+            {s.mineReady ? (
+              <div className="grid grid-cols-2 gap-x-3 gap-y-5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                {s.folders.map((f) => (
+                  <FolderCard key={f.id} f={f} />
+                ))}
+              </div>
+            ) : (
+              <FoldersSkeleton />
+            )}
           </>
         )}
       </div>

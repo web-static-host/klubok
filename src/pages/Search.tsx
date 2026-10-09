@@ -6,13 +6,14 @@ import { num } from '../lib'
 import { SearchBox } from '../components/Layout'
 import { Masonry } from '../components/Masonry'
 import { Avatar, Empty } from '../components/ui'
+import { MasonrySkeleton } from '../components/Skeleton'
 
 const SUGGEST = ['сырники', 'хранение', 'дача', 'выпечка', 'уборка', 'вязание', 'без сахара', 'маленькая квартира']
 
 export function Search() {
   const [params] = useSearchParams()
   const q = (params.get('q') ?? '').trim().toLowerCase()
-  const { posts, users, user, me } = useStore()
+  const { posts, users, user, me, loaded } = useStore()
 
   const found = q
     ? posts.filter((p) =>
@@ -39,6 +40,11 @@ export function Search() {
             ))}
           </div>
         </div>
+      ) : !loaded ? (
+        <>
+          <h1 className="mb-3 px-1 text-lg font-bold">«{params.get('q')}»</h1>
+          <MasonrySkeleton rows={2} />
+        </>
       ) : (
         <>
           <h1 className="mb-3 px-1 text-lg font-bold">

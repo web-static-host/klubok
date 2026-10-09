@@ -9,6 +9,7 @@ import { Masonry } from '../components/Masonry'
 import { Sheet } from '../components/Sheet'
 import { Button, Empty, IconButton, Picture } from '../components/ui'
 import { LoginForm } from '../components/LoginSheet'
+import { Bone, FoldersSkeleton, MasonrySkeleton } from '../components/Skeleton'
 
 /** Обложка папки — коллаж из трёх картинок (DESIGN_WEB 3.7) */
 export function FolderCard({ f }: { f: Folder }) {
@@ -80,8 +81,8 @@ export function NewFolderButton() {
 }
 
 export function Folders() {
-  const { folders, authed } = useStore()
-  if (!authed)
+  const { folders, authed, authReady, mineReady } = useStore()
+  if (authReady && !authed)
     return (
       <>
         <MobileTop title="Папки" />
@@ -100,7 +101,9 @@ export function Folders() {
           <div className="flex-1 md:hidden" />
           <NewFolderButton />
         </div>
-        {folders.length ? (
+        {!mineReady ? (
+          <FoldersSkeleton />
+        ) : folders.length ? (
           <div className="grid grid-cols-2 gap-x-3 gap-y-5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
             {folders.map((f) => (
               <FolderCard key={f.id} f={f} />
@@ -116,9 +119,22 @@ export function Folders() {
 
 export function FolderPage() {
   const { id = '' } = useParams()
-  const { folders, post } = useStore()
+  const { folders, post, mineReady, loaded } = useStore()
   const nav = useNavigate()
   const f = folders.find((x) => x.id === id)
+  if (!f && (!mineReady || !loaded))
+    return (
+      <div className="px-2 pt-3 sm:px-3 md:px-4 md:pt-6 lg:px-6" role="status" aria-label="Загрузка">
+        <div className="mb-4 flex items-center gap-3 px-1">
+          <Bone className="h-10 w-10 rounded-2xl" />
+          <div>
+            <Bone className="h-6 w-40" />
+            <Bone className="mt-1.5 h-3 w-28" />
+          </div>
+        </div>
+        <MasonrySkeleton rows={2} />
+      </div>
+    )
   if (!f) return <Empty icon={SearchX}>Папка не найдена.</Empty>
   const list = f.postIds.map((pid) => post(pid)).filter((p) => !!p)
   return (

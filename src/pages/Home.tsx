@@ -4,10 +4,12 @@ import { useStore } from '../store'
 import { MobileTop } from '../components/Layout'
 import { Masonry } from '../components/Masonry'
 import { Chip } from '../components/ui'
+import { ScrollRow } from '../components/ScrollRow'
+import { ChipsSkeleton, MasonrySkeleton } from '../components/Skeleton'
 
 /** «Для вас» — лента-плитка. Порядок пока простой: свежее и часто сохраняемое вперемешку. */
 export function Home() {
-  const { posts } = useStore()
+  const { posts, loaded } = useStore()
   const [topic, setTopic] = useState<Topic | 'all'>('all')
   // таблетки — только категории, в которых есть посты: сначала из списка, потом свои
   const topics = useMemo(() => {
@@ -23,19 +25,24 @@ export function Home() {
   return (
     <>
       <MobileTop />
-      <div className="no-scrollbar flex gap-2 overflow-x-auto px-2 pt-1 pb-3 sm:px-3 md:px-4 md:pt-4 lg:px-6">
-        <Chip active={topic === 'all'} onClick={() => setTopic('all')}>
-          Все
-        </Chip>
-        {topics.map((t) => (
-          <Chip key={t} active={topic === t} onClick={() => setTopic(t)}>
-            {topicLabel(t)}
-          </Chip>
-        ))}
+      {/* полоска категорий — ровно по ширине ленты */}
+      <div className="px-2 pt-1 pb-3 sm:px-3 md:px-4 md:pt-4 lg:px-6">
+        {loaded ? (
+          <ScrollRow label="Категории">
+            <Chip active={topic === 'all'} onClick={() => setTopic('all')}>
+              Все
+            </Chip>
+            {topics.map((t) => (
+              <Chip key={t} active={topic === t} onClick={() => setTopic(t)}>
+                {topicLabel(t)}
+              </Chip>
+            ))}
+          </ScrollRow>
+        ) : (
+          <ChipsSkeleton />
+        )}
       </div>
-      <div className="px-2 sm:px-3 md:px-4 lg:px-6">
-        <Masonry posts={list} />
-      </div>
+      <div className="px-2 sm:px-3 md:px-4 lg:px-6">{loaded ? <Masonry posts={list} /> : <MasonrySkeleton />}</div>
     </>
   )
 }

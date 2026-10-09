@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeftRight, Check, ChevronLeft, ChevronRight, ImagePlus, Loader2, Plus, Sparkles, TriangleAlert, X } from 'lucide-react'
 import type { Topic } from '../data/types'
 import { Rejected, useStore } from '../store'
@@ -19,9 +19,10 @@ const MAX_TOPICS = 5
 
 /** Создание поста: картинки (вся идея на них), название, категория — DESIGN_WEB 3.9 */
 export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { addPost } = useStore()
+  const { addPost, me } = useStore()
   const { toast } = useUi()
   const nav = useNavigate()
+  const { pathname } = useLocation()
   // картинки загружаются и проверяются сразу после выбора, в фоне
   const pics = useCheckedImages('post')
   const images = pics.items
@@ -137,7 +138,7 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
     }
     setBusy(true)
     try {
-      const id = await addPost({
+      await addPost({
         type: beforeAfter ? 'beforeafter' : 'photo',
         topics: list,
         title: shownTitle.trim().replace(/\s+/g, ' '),
@@ -147,7 +148,8 @@ export function CreateSheet({ open, onClose }: { open: boolean; onClose: () => v
       reset()
       onClose()
       toast('Опубликовано')
-      nav(`/p/${id}`)
+      // новая идея — первой в «Публикациях» профиля (подсвечена); уже в профиле — просто закрываем окно
+      if (pathname !== '/me' && pathname !== `/u/${me.id}`) nav('/me')
     } catch (e) {
       setBusy(false)
       setErr(

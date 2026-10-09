@@ -540,11 +540,19 @@ async function checkImage(img: ImgIn, uid: string, allowPeople: boolean, tm: Tim
  * Строгая проверка текста с картинки (ссылки, мат): нашлось — идея скрывается для всех, автор видит причину.
  * Картинки — по одной (у ИИ один поток); функция живёт ограниченное время, поэтому не дольше ~100 с.
  */
-async function describePost(postId: string, images: ImgIn[], quick: Meta) {
+async function describePost(postId: string, images: ImgIn[], quick: Meta, words: string[] = []) {
   const start = performance.now()
   const metas: Meta[] = []
   const texts: string[] = []
   const bad: string[] = []
+  // название и категории — ИИ проверяет уже после публикации; нарушение — скрываем сразу, не дожидаясь разбора картинок
+  if (words.length) {
+    const t = await checkTexts(words)
+    if (!t.ok) {
+      bad.push(...t.reasons.map((r) => `Название или категории: ${r}`))
+      await admin.from('posts').update({ hidden: true, hidden_reason: bad.join('. ') }).eq('id', postId)
+    }
+  }
   for (const [i, img] of images.entries()) {
     if (performance.now() - start > 100_000) break
     const path = img.src.slice(PUBLIC_PREFIX.length)
@@ -585,6 +593,12 @@ async function describePost(postId: string, images: ImgIn[], quick: Meta) {
     .eq('id', postId)
 }
 
+/** Только быстрые правила (ссылки, мат) — без ИИ */
+function quickOnly(texts: string[]) {
+  const reasons = quickTextCheck(texts.filter(Boolean).join('\n'))
+  return reasons.length ? { ok: false, reasons, ai: false } : {}
+}
+
 /** Проверка текстов: быстрые правила, затем ИИ. ИИ недоступен — только быстрые правила */
 /** profile — тексты профиля [имя, ник, о себе]: ИИ получает их с подписями и пояснением про ник */
 async function checkTexts(texts: string[], profile = false): Promise<{ ok: boolean; reasons: string[]; ai: boolean }> {
@@ -607,9 +621,18 @@ async function checkTexts(texts: string[], profile = false): Promise<{ ok: boole
 }
 
 /** Тексты + картинки. Картинки по очереди: у личного тарифа GigaChat один поток */
-export async function moderate(texts: string[], images: ImgIn[], uid: string, allowPeople = false, profile = false, tm: Timing = {}) {
+export async function moderate(
+  texts: string[],
+  images: ImgIn[],
+  uid: string,
+  allowPeople = false,
+  profile = false,
+  tm: Timing = {},
+  /** false — текст только по быстрым правилам (ссылки, мат), а ИИ проверит его уже после публикации */
+  textAi = true,
+) {
   let t0 = performance.now()
-  const t = await checkTexts(texts, profile)
+  const t = textAi ? await checkTexts(texts, profile) : { ok: true, reasons: [] as string[], ai: true, ...quickOnly(texts) }
   tm.texts = ms(t0)
   t0 = performance.now()
   if (!t.ok) return { ok: false, reasons: t.reasons, ai: t.ai, tags: [] as string[], meta: emptyMeta(), aiText: '' }
@@ -759,7 +782,8 @@ export async function handle(req: Request): Promise<Response> {
       // замеры публикации (ТЕСТ) — пишутся в posts.publish_timing
       const ptm: Timing = { auth: authMs }
       const pt0 = performance.now()
-      const m = await moderate([title, ...topics], images, uid, false, false, ptm)
+      // текст здесь — только быстрые правила; ИИ проверит название и категории уже после публикации (describePost)
+      const m = await moderate([title, ...topics], images, uid, false, false, ptm, false)
       // картинки не удаляем: человек исправит название или уберёт плохую картинку и опубликует снова
       if (!m.ok) return json({ ok: false, reasons: m.reasons })
       const { data, error } = await admin
@@ -781,7 +805,7 @@ export async function handle(req: Request): Promise<Response> {
         .single()
       if (error) return json({ ok: false, reasons: ['Не получилось сохранить'], detail: error.message }, 500)
       // подробный разбор картинок — уже после ответа, человеку ждать незачем
-      later(describePost(data.id, images, m.meta))
+      later(describePost(data.id, images, m.meta, [title, ...topics.filter((t) => !TOPICS.some(([id]) => id === t))]))
       return json({ ok: true, row: data })
     }
 

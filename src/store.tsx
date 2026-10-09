@@ -47,6 +47,8 @@ interface Store {
   repliesOf: (tryId: string) => Reply[]
   toggleFollow: (userId: string) => void
   addPost: (p: NewPost) => Promise<string>
+  /** только что опубликованная идея — пару секунд подсвечена в списке */
+  fresh: string | null
   /** удалить свою идею (вместе с отзывами и картинками); не вышло — исключение Rejected */
   deletePost: (id: string) => Promise<void>
   /** загрузить своё фото в хранилище (сразу после выбора) */
@@ -293,6 +295,7 @@ export function StoreProvider({
   const [loginOpen, setLoginOpen] = useState(false)
   const [recoveryOpen, setRecoveryOpen] = useState(!!recovery)
   const [notice, setNotice] = useState<string | null>(initialNotice ?? null)
+  const [fresh, setFresh] = useState<string | null>(null)
 
   // кто вошёл: следим за входом и выходом
   useEffect(() => {
@@ -514,8 +517,11 @@ export function StoreProvider({
       const images = await Promise.all(data.images.map(upload))
       const p = toPost((await publish({ action: 'post', type: data.type, topics: data.topics, title: data.title, images })) as PostRow)
       setPosts((ps) => [p, ...ps])
+      setFresh(p.id)
+      setTimeout(() => setFresh((f) => (f === p.id ? null : f)), 3000)
       return p.id
     },
+    fresh,
     deletePost: async (id) => {
       await publish({ action: 'delete-post', postId: id })
       setPosts((ps) => ps.filter((p) => p.id !== id))

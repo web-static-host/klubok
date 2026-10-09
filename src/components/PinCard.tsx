@@ -10,7 +10,7 @@ import { Avatar, Picture, TopicBadge } from './ui'
 
 /** Карточка ленты — DESIGN_WEB 3.3 */
 export function PinCard({ post, folderId }: { post: Post; folderId?: string }) {
-  const { user, triesOf, savedIn, folders, toggleDone, me } = useStore()
+  const { user, triesOf, savedIn, folders, toggleDone, me, fresh } = useStore()
   const { openSave } = useUi()
   const author = user(post.authorId)
   const tries = triesOf(post.id)
@@ -41,7 +41,13 @@ export function PinCard({ post, folderId }: { post: Post; folderId?: string }) {
 
   return (
     <article ref={box} className="group fade-up min-w-0">
-      <div className="relative">
+      {/* только что опубликованная — пару секунд в бирюзовой рамке */}
+      <div
+        className={cx(
+          'relative rounded-2xl ring-offset-2 ring-offset-bg transition-shadow duration-700',
+          fresh === post.id ? 'ring-2 ring-accent' : 'ring-0',
+        )}
+      >
         <Link to={`/p/${post.id}`} onClick={open} className="block rounded-2xl" aria-label={post.title}>
           {post.type === 'beforeafter' && post.images[1] ? (
             <div className="grid grid-cols-2 gap-0.5 overflow-hidden rounded-2xl" style={{ aspectRatio: `1 / ${post.images[0].ratio}` }}>

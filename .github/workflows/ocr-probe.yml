@@ -1,0 +1,24 @@
+# Опыт (только по запуску вручную): видит ли ГигаЧат надпись поверх картинки — .github/scripts/ocr_probe.py
+name: Опыт — чтение надписей ГигаЧатом
+
+on:
+  workflow_dispatch:
+    inputs:
+      src:
+        description: 'адрес картинки'
+        required: true
+      box:
+        description: 'где надпись: x1,y1,x2,y2'
+        required: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SRC: ${{ inputs.src }}
+      BOX: ${{ inputs.box }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install pillow
+      - run: python3 .github/scripts/ocr_probe.py

@@ -50,6 +50,7 @@ const SB_SERVICE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const GC_KEY = (Deno.env.get('GIGACHAT_AUTH_KEY') ?? '').trim()
 const GC_SCOPE = Deno.env.get('GIGACHAT_SCOPE') ?? 'GIGACHAT_API_PERS'
 const GC_MODEL = Deno.env.get('GIGACHAT_MODEL') ?? 'GigaChat-2-Max'
+const GC_MODELS = ['GigaChat-2', 'GigaChat-2-Pro', 'GigaChat-2-Max', 'GigaChat-Max', 'GigaChat-Pro']
 const GC_API = 'https://gigachat.devices.sberbank.ru/api/v1'
 const GC_OAUTH = 'https://ngw.devices.sberbank.ru:9443/api/v2/oauth'
 
@@ -322,13 +323,13 @@ function isRuleCopy(r: string) {
   return x.length >= 12 && ruleLines.some((l) => l.startsWith(x.slice(0, 20)) || x.startsWith(l.slice(0, 20)))
 }
 
-async function gcAsk(system: string, user: string, attachments: string[] = [], allowPeopleNow = false, tm?: Timing): Promise<Verdict> {
+async function gcAsk(system: string, user: string, attachments: string[] = [], allowPeopleNow = false, tm?: Timing, model = GC_MODEL): Promise<Verdict> {
   const t = performance.now()
   const res = await gcFetchWait(`${GC_API}/chat/completions`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${await gcToken()}`, 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({
-      model: GC_MODEL,
+      model,
       temperature: 0.01,
       messages: [
         { role: 'system', content: system },
@@ -430,7 +431,7 @@ async function isAdmin(req: Request): Promise<boolean> {
  * В подробном разборе ИИ переписывает только крупный текст и пропускает мелкие надписи — узкий вопрос ловит надёжнее.
  * Ответ короткий (~1,5–2 с). ИИ недоступен — пусто: разбор не срываем.
  */
-async function findSwear(id: string, tm: Timing): Promise<string[]> {
+async function findSwear(id: string, tm: Timing, model = GC_MODEL): Promise<string[]> {
   const st: Timing = {}
   try {
     const v = await gcAsk(
@@ -443,6 +444,7 @@ async function findSwear(id: string, tm: Timing): Promise<string[]> {
       [id],
       true,
       st,
+      model,
     )
     return v.ok ? [] : v.reasons.length ? v.reasons : ['Мат на картинке']
   } catch (e) {
@@ -466,15 +468,7 @@ async function aiCheckImage(
   early?: Promise<Prepared>,
   mode: 'quick' | 'full' = 'quick',
 ): Promise<Verdict> {
-  const { bytes, type, auth } = await (early ?? prepareImage(src, tm))
-  const form = new FormData()
-  form.append('file', new Blob([bytes], { type }), 'image.jpg')
-  form.append('purpose', 'general')
-  const t = performance.now()
-  const up = await gcFetchWait(`${GC_API}/files`, { method: 'POST', headers: { Authorization: `Bearer ${auth}` }, body: form })
-  if (!up.ok) throw new Error(`GigaChat: картинка не загрузилась (${up.status}) ${(await up.text()).slice(0, 200)}`)
-  const { id } = await up.json()
-  tm.upload = ms(t)
+  const id = await gcUpload(await (early ?? prepareImage(src, tm)), tm)
   try {
     return mode === 'quick'
       ? await gcAsk(
@@ -519,8 +513,25 @@ ok = false ставь только при явном нарушении прав
           tm,
         ).then(async (v) => ({ ...v, swear: await findSwear(id, tm) }))
   } finally {
-    gcFetch(`${GC_API}/files/${id}/delete`, { method: 'POST', headers: { Authorization: `Bearer ${await gcToken()}` } }).catch(() => {})
+    gcDelete(id)
   }
+}
+
+/** Картинка → хранилище ГигаЧата (оттуда её прикладывают к вопросу); после вопросов — удалить */
+async function gcUpload({ bytes, type, auth }: Prepared, tm: Timing = {}): Promise<string> {
+  const form = new FormData()
+  form.append('file', new Blob([bytes], { type }), 'image.jpg')
+  form.append('purpose', 'general')
+  const t = performance.now()
+  const up = await gcFetchWait(`${GC_API}/files`, { method: 'POST', headers: { Authorization: `Bearer ${auth}` }, body: form })
+  if (!up.ok) throw new Error(`GigaChat: картинка не загрузилась (${up.status}) ${(await up.text()).slice(0, 200)}`)
+  tm.upload = ms(t)
+  return (await up.json()).id
+}
+function gcDelete(id: string) {
+  gcToken()
+    .then((auth) => gcFetch(`${GC_API}/files/${id}/delete`, { method: 'POST', headers: { Authorization: `Bearer ${auth}` } }))
+    .catch(() => {})
 }
 
 // ─── 3. Публикация ──────────────────────────────────────────
@@ -816,6 +827,30 @@ export async function handle(req: Request): Promise<Response> {
     await describePost(p.id, p.author_id, p.images as ImgIn[], parseMeta(p.ai_meta ?? {}), [], true, timings)
     const { data: after } = await admin.from('posts').select('hidden').eq('id', p.id).single()
     return json({ ok: true, was_hidden: p.hidden, hidden: after?.hidden, total: ms(t), images: timings })
+  }
+
+  // служебное: опыт — задать ГигаЧату вопрос по присланной картинке (.github/scripts/ocr_probe.py). Текст с картинки — только для опыта.
+  if (body.action === 'admin-ask') {
+    if (!(await isAdmin(req))) return json({ ok: false, reasons: ['Нет доступа'] }, 403)
+    const bytes = Uint8Array.from(atob(String(body.image ?? '')), (c) => c.charCodeAt(0))
+    if (!bytes.length || bytes.length > 600_000) return json({ ok: false, reasons: ['Неверная картинка'] }, 400)
+    const model = GC_MODELS.includes(String(body.model)) ? String(body.model) : GC_MODEL
+    const id = await gcUpload({ bytes: bytes.buffer, type: 'image/jpeg', auth: await gcToken() })
+    try {
+      if (body.ask === 'swear') return json({ ok: true, swear: await findSwear(id, {}, model) })
+      const v = await gcAsk(
+        `Перепиши дословно весь текст с картинки, каждую надпись с новой строки. Ничего не пропускай: мелкие надписи, текст от руки, надписи другим цветом и поверх других элементов. Ничего не исправляй и не смягчай, даже грубые слова.
+Ответь только JSON без пояснений: {"text": "весь текст"}`,
+        'Перепиши текст с картинки.',
+        [id],
+        true,
+        undefined,
+        model,
+      )
+      return json({ ok: true, text: v.text, mat: imageTextCheck(v.text).length > 0, blocked: !v.ok })
+    } finally {
+      gcDelete(id)
+    }
   }
 
   // разогрев: сайт зовёт, когда открывают «Новая идею», — функция запускается и заранее входит в ГигаЧат,

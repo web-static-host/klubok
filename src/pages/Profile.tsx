@@ -69,8 +69,8 @@ export function Profile({ self }: { self?: boolean }) {
         </div>
       )}
       {/* шапка — в ширину: карточка автора (с кнопкой «Изменить профиль» / «Подписаться»), цифры; у себя ниже — настройки. На телефоне — столбиком */}
-      <section className="fade-up flex flex-col gap-2 md:flex-row md:flex-wrap">
-        <div className="card flex min-w-0 items-center gap-3 p-3 md:min-w-[280px] md:flex-1">
+      <section className="fade-up flex flex-col gap-2 md:flex-row md:flex-wrap md:justify-center">
+        <div className="card flex min-w-0 items-center gap-3 p-3 md:max-w-[560px]">
           <Avatar user={u} size={56} />
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-xl leading-7 font-bold">{u.name}</h1>
@@ -82,7 +82,7 @@ export function Profile({ self }: { self?: boolean }) {
               kind="neutral"
               size="sm"
               icon={Pencil}
-              className="shrink-0"
+              className="ml-1 shrink-0"
               aria-label="Изменить профиль"
               onClick={() => setEditing(true)}
             >
@@ -92,7 +92,7 @@ export function Profile({ self }: { self?: boolean }) {
             <Button
               kind={s.follows.includes(u.id) ? 'neutral' : 'primary'}
               size="sm"
-              className="shrink-0"
+              className="ml-1 shrink-0"
               onClick={() => s.toggleFollow(u.id)}
             >
               {s.follows.includes(u.id) ? 'Вы подписаны' : 'Подписаться'}
@@ -113,7 +113,7 @@ export function Profile({ self }: { self?: boolean }) {
         </dl>
       </section>
       {mine && (
-        <section className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-[1fr_auto_auto]" aria-label="Настройки">
+        <section className="mt-2 grid grid-cols-2 gap-2 md:flex md:justify-center" aria-label="Настройки">
           <div className="col-span-2 md:col-span-1">
             <ThemeSettings />
           </div>

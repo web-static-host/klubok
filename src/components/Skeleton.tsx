@@ -121,8 +121,8 @@ export function ChipsSkeleton() {
 export function ProfileHeadSkeleton({ self }: { self?: boolean }) {
   return (
     <div role="status" aria-label="Загрузка">
-      <section className="flex flex-col gap-2 md:flex-row md:flex-wrap">
-        <div className="card flex min-w-0 items-center gap-3 p-3 md:min-w-[280px] md:flex-1">
+      <section className="flex flex-col gap-2 md:flex-row md:flex-wrap md:justify-center">
+        <div className="card flex min-w-0 items-center gap-3 p-3 md:max-w-[560px]">
           <Bone className="h-14 w-14 shrink-0 rounded-full" />
           <div className="min-w-0 flex-1">
             <h1 className="text-xl leading-7 font-bold">
@@ -148,14 +148,14 @@ export function ProfileHeadSkeleton({ self }: { self?: boolean }) {
         </div>
       </section>
       {self && (
-        <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-[1fr_auto_auto]">
+        <div className="mt-2 grid grid-cols-2 gap-2 md:flex md:justify-center">
           {[0, 1, 2].map((i) => (
             <Bone
               key={i}
               className={
                 i
-                  ? cx('h-[50px] rounded-2xl md:h-[52px]', i === 1 ? 'md:w-[170px]' : 'md:w-[330px]')
-                  : 'col-span-2 h-[52px] rounded-2xl md:col-span-1'
+                  ? cx('h-[50px] rounded-2xl md:h-[52px]', i === 1 ? 'md:w-[178px]' : 'md:w-[320px]')
+                  : 'col-span-2 h-[52px] rounded-2xl md:col-span-1 md:w-[380px]'
               }
             />
           ))}

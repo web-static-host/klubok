@@ -20,11 +20,10 @@ export function ScrollRow({ children, className, label }: { children: ReactNode;
       const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 2
       setEdges((e) => (e.left === left && e.right === right ? e : { left, right }))
     }
-    // колесо мыши (вверх-вниз) листает полоску вбок; у конца полоски — дальше крутится страница
+    // колесо мыши над полоской листает только её (и у конца страница не крутится); полоска короче экрана — колесо крутит страницу
     const wheel = (e: WheelEvent) => {
       if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return
-      const max = el.scrollWidth - el.clientWidth
-      if (max <= 0 || (e.deltaY < 0 && el.scrollLeft <= 0) || (e.deltaY > 0 && el.scrollLeft >= max - 1)) return
+      if (el.scrollWidth - el.clientWidth <= 0) return
       e.preventDefault()
       el.scrollLeft += e.deltaY
     }

@@ -60,13 +60,17 @@ export function MasonrySkeleton({ rows = 3 }: { rows?: number }) {
   )
 }
 
-/** Полоска категорий */
+/** Полоска категорий: таблетки до самого края (с затуханием, как у настоящей) и кружок стрелки справа на компьютере */
 export function ChipsSkeleton() {
+  const fade = 'linear-gradient(to right, #000 0, #000 calc(100% - 56px), transparent 100%)'
   return (
-    <div className="flex gap-2 overflow-hidden" aria-hidden>
-      {[52, 96, 88, 96, 136, 100, 84, 96, 104, 84, 124].map((w, i) => (
-        <Bone key={i} className="h-[38px] shrink-0 rounded-full" style={{ width: w }} />
-      ))}
+    <div className="relative" aria-hidden>
+      <div className="flex gap-2 overflow-hidden" style={{ maskImage: fade, WebkitMaskImage: fade }}>
+        {[52, 96, 88, 96, 136, 100, 84, 96, 104, 84, 124, 112, 92, 80, 96, 120, 88, 104].map((w, i) => (
+          <Bone key={i} className="h-[38px] shrink-0 rounded-full" style={{ width: w }} />
+        ))}
+      </div>
+      <Bone className="absolute top-1/2 right-0 hidden h-9 w-9 -translate-y-1/2 rounded-full md:block" />
     </div>
   )
 }

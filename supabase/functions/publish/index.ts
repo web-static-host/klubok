@@ -297,6 +297,16 @@ export type Timing = Record<string, number>
 const ms = (t: number) => Math.round(performance.now() - t)
 let cold = true
 
+const PEOPLE_REASON = 'На картинках не должно быть людей (руки в кадре можно)'
+/**
+ * Причину от ИИ показываем человеку — без служебных слов: бывает, ИИ пишет «Нарушение правил: people = true».
+ * Про людей — наша понятная фраза; прочие служебные — убираем (останется общая «нарушает правила»).
+ */
+function humanReason(r: string): string {
+  if (!/\b(people|ok|true|false|reasons|json)\b/i.test(r)) return r.trim()
+  return /people/i.test(r) ? PEOPLE_REASON : ''
+}
+
 async function gcAsk(system: string, user: string, attachments: string[] = [], allowPeopleNow = false, tm?: Timing): Promise<Verdict> {
   const t = performance.now()
   const res = await gcFetchWait(`${GC_API}/chat/completions`, {
@@ -327,8 +337,8 @@ async function gcAsk(system: string, user: string, attachments: string[] = [], a
   return {
     ok: v.ok !== false && !(v.people === true && !allowPeopleNow),
     reasons: [
-      ...(v.people === true && !allowPeopleNow ? ['На картинках не должно быть людей (руки в кадре можно)'] : []),
-      ...(Array.isArray(v.reasons) ? v.reasons.map(String) : []),
+      ...(v.people === true && !allowPeopleNow ? [PEOPLE_REASON] : []),
+      ...(Array.isArray(v.reasons) ? v.reasons.map(String).map(humanReason) : []),
     ].filter((r, i, a) => r && a.indexOf(r) === i),
     meta: parseMeta(v),
     text: typeof v.text === 'string' ? v.text.slice(0, 4000) : '',
@@ -412,7 +422,7 @@ async function aiCheckImage(
 ${
             allowPeople
               ? 'Это фото профиля (аватар): люди и лица на нём разрешены, остальные правила действуют. Поле people всегда false.'
-              : 'Отдельное правило: на картинках публикаций не должно быть людей. people = true ТОЛЬКО если явно видно лицо человека или человеческая фигура/тело (на фото или реалистичном рисунке). НЕ люди: руки и пальцы, еда, посуда, предметы, растения, животные, иконки, схемы, нарисованные человечки-значки. Если сомневаешься — people = false.'
+              : 'Отдельное правило: на картинках публикаций не должно быть людей. people = true, если на картинке есть человек: лицо, фигура или тело — на фото или нарисованный (в том числе мультяшный, аниме, иллюстрация). НЕ люди (people = false): руки и пальцы в кадре; еда, посуда, предметы, растения; животные; персонажи, которые не люди, — ожившая еда или предметы с лицами, руками и ногами, мультяшные животные, маскоты, игрушки; иконки, схемы, человечки-значки. Если сомневаешься — people = false.'
           }
 Внимательно посмотри на весь текст на картинке: ссылка, адрес сайта, @ник, телефон, почта, QR-код, призыв написать или купить — это нарушение (ok = false).
 ok = false ставь только при явном нарушении правил; рецепты, инструкции, инфографика с текстом и цифрами — это нормально.

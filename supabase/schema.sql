@@ -335,8 +335,7 @@ create table if not exists reports (
   status text not null default 'open' check (status in ('open', 'accepted', 'rejected')),
   resolved_by uuid references profiles (id) on delete set null,
   resolved_at timestamptz,
-  created_at timestamptz not null default now(),
-  unique (reporter_id, target_type, target_id)
+  created_at timestamptz not null default now()
 );
 create index if not exists reports_target_idx on reports (target_type, target_id);
 create index if not exists reports_status_idx on reports (status, created_at desc);
@@ -1174,3 +1173,7 @@ begin
 end $$;
 revoke all on function track(jsonb, text) from public;
 grant execute on function track(jsonb, text) to anon, authenticated;
+
+-- ════ Повторная жалоба после рассмотрения — как migrations/015_reports_reopen.sql ════
+alter table reports drop constraint if exists reports_reporter_id_target_type_target_id_key;
+create unique index if not exists reports_open_once on reports (reporter_id, target_type, target_id) where status = 'open';

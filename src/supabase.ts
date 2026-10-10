@@ -8,10 +8,38 @@ const DIRECT: string = import.meta.env.VITE_SUPABASE_URL
  */
 export const API_URL: string = (import.meta.env.VITE_API_URL || DIRECT).replace(/\/+$/, '')
 
+/** Чтение через функции базы — его можно безопасно повторить */
+const READ_RPC =
+  /\/rest\/v1\/rpc\/(my_stats|notifications_digest|is_admin|admin_[a-z_]+|profile_summary|feed|search_posts|tried_posts|used_topics)\b/
+
+/**
+ * Связь через сервер-проброс иногда обрывается, когда запросов много сразу (вход: папки, подписки, уведомления, настройки…).
+ * Чтение повторяем до двух раз; запись — нет (иначе можно, например, дважды опубликовать).
+ */
+async function retryingFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const url = input instanceof Request ? input.url : String(input)
+  const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase()
+  const safe = method === 'GET' || method === 'HEAD' || (method === 'POST' && READ_RPC.test(url))
+  for (let i = 0; ; i++) {
+    try {
+      const r = await fetch(input, init)
+      if (safe && i < 2 && r.status >= 502 && r.status <= 504) {
+        await new Promise((ok) => setTimeout(ok, 400 * (i + 1)))
+        continue
+      }
+      return r
+    } catch (e) {
+      if (!safe || i >= 2 || init?.signal?.aborted) throw e
+      await new Promise((ok) => setTimeout(ok, 400 * (i + 1)))
+    }
+  }
+}
+
 /** Подключение к тестовой базе. Адреса и открытый ключ — в файле .env */
 export const supabase = createClient(API_URL, import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, {
   // вход хранится под одним именем, через что бы ни ходили — смена адреса не выкидывает из аккаунта
   auth: { storageKey: `sb-${new URL(DIRECT).hostname.split('.')[0]}-auth-token` },
+  global: { fetch: retryingFetch },
 })
 
 /**

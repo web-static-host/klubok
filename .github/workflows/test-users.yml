@@ -1,0 +1,27 @@
+# Тестовые пользователи для проверки сайта (только по запуску вручную): создать, подготовить данные, удалить всё тестовое.
+# Пароль сюда не передаётся — только его необратимая запись (bcrypt). В журнал — только «ок» и числа.
+name: Тестовые пользователи
+
+on:
+  workflow_dispatch:
+    inputs:
+      op:
+        description: 'create — создать, backdate — сдвинуть даты для проверки сводки, cleanup — удалить всё тестовое'
+        required: true
+      hash:
+        description: 'bcrypt-запись пароля (для create)'
+        required: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      OP: ${{ inputs.op }}
+      HASH: ${{ inputs.hash }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node .github/scripts/test-users.mjs

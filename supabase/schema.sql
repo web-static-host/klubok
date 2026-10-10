@@ -8,7 +8,7 @@ drop table if exists notification_settings, notifications, not_interested, event
 drop function if exists handle_new_user, bump_post_likes, bump_post_saves, bump_followers, bump_post_tries, track_posts, track, is_admin, admin_check,
   notify_wanted, notify, on_try_notify, on_reply_notify, on_follow_event, on_save_event, on_post_hidden_notify, notifications_digest,
   feed, used_topics, search_posts, profile_summary, tried_posts, my_stats, admin_reports, admin_hidden, admin_refusals, admin_users,
-  admin_site_stats, admin_log_list cascade;
+  admin_site_stats, admin_log_list, orphan_images cascade;
 drop type if exists post_type, post_topic cascade;
 
 -- ─── Типы ───────────────────────────────────────────────────
@@ -1177,3 +1177,35 @@ grant execute on function track(jsonb, text) to anon, authenticated;
 -- ════ Повторная жалоба после рассмотрения — как migrations/015_reports_reopen.sql ════
 alter table reports drop constraint if exists reports_reporter_id_target_type_target_id_key;
 create unique index if not exists reports_open_once on reports (reporter_id, target_type, target_id) where status = 'open';
+
+-- ════ Ничейные картинки — как migrations/016_orphan_images.sql ════
+create or replace function orphan_images(p_hours int default 48, p_limit int default 1000)
+returns setof text
+language sql stable security definer set search_path = public, storage
+as $$
+  with used as (
+    select substr(x ->> 'src', strpos(x ->> 'src', '/object/public/images/') + 22) as p
+      from posts, jsonb_array_elements(images) x
+    union
+    select substr(x ->> 'thumb', strpos(x ->> 'thumb', '/object/public/images/') + 22)
+      from posts, jsonb_array_elements(images) x where x ? 'thumb'
+    union
+    select substr(img ->> 'src', strpos(img ->> 'src', '/object/public/images/') + 22)
+      from tries where img ? 'src'
+    union
+    select substr(avatar_url, strpos(avatar_url, '/object/public/images/') + 22)
+      from profiles where avatar_url like '%/object/public/images/%'
+  )
+  select o.name
+    from storage.objects o
+   where o.bucket_id = 'images'
+     and o.name not like 'demo/%'
+     and not exists (select 1 from used where used.p = o.name)
+     -- в форме картинка может пролежать до публикации — даём двое суток; у удалённых аккаунтов — сразу
+     and (o.created_at < now() - make_interval(hours => greatest(p_hours, 24))
+          or not exists (select 1 from profiles pr where pr.id::text = split_part(o.name, '/', 1)))
+   order by o.created_at
+   limit least(greatest(p_limit, 1), 1000)
+$$;
+revoke all on function orphan_images(int, int) from public, anon, authenticated;
+grant execute on function orphan_images(int, int) to service_role;

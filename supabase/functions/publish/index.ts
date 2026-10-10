@@ -977,6 +977,26 @@ export async function handle(req: Request): Promise<Response> {
     return json({ ok: true, was_hidden: p.hidden, hidden: after?.hidden, total: ms(t), images: timings })
   }
 
+  // служебное: удалить ничейные картинки (список — функция базы orphan_images) — .github/scripts/orphans.mjs раз в сутки. Отвечает только числами.
+  if (body.action === 'admin-orphans') {
+    if (!(await isAdmin(req))) return json({ ok: false, reasons: ['Нет доступа'] }, 403)
+    let removed = 0
+    for (let round = 0; round < 5; round++) {
+      const { data, error } = await admin.rpc('orphan_images', { p_hours: 48, p_limit: 1000 })
+      if (error) return json({ ok: false, reasons: [error.message] }, 500)
+      const paths = (data ?? []) as string[]
+      for (let i = 0; i < paths.length; i += 100) {
+        const part = paths.slice(i, i + 100)
+        const { error: e } = await admin.storage.from('images').remove(part)
+        if (e) return json({ ok: false, reasons: [e.message], removed }, 500)
+        await admin.from('image_checks').delete().in('path', part)
+        removed += part.length
+      }
+      if (paths.length < 1000) break
+    }
+    return json({ ok: true, removed })
+  }
+
   // служебное: опыт — задать ГигаЧату вопрос по присланной картинке (.github/scripts/ocr_probe.py). Текст с картинки — только для опыта.
   if (body.action === 'admin-ask') {
     if (!(await isAdmin(req))) return json({ ok: false, reasons: ['Нет доступа'] }, 403)

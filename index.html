@@ -21,7 +21,7 @@
     </script>
     <script>
       // Первая порция ленты «Для вас» и категории — запрашиваем сразу, пока грузится код сайта. Сайт возьмёт уже начатые запросы
-      // (адреса должны совпадать с feedQuery и TOPICS_QUERY в src/supabase.ts, порядок — как feedSeed в src/store.tsx).
+      // (адреса должны совпадать с feedQuery и TOPICS_QUERY в src/supabase.ts, порядок — как feedSeed в src/store.tsx, номер браузера — как anonId).
       // Вошедшему — с его пропуском (лента по интересам). Соединение с сервером открываем заранее.
       try {
         var api = '%VITE_API_URL%';
@@ -46,11 +46,18 @@
           var ses = JSON.parse(localStorage.getItem('sb-' + ref + '-auth-token'));
           if (ses && ses.access_token && ses.expires_at * 1000 > Date.now() + 30000) token = ses.access_token;
         } catch (e) {}
+        // номер браузера — как anonId в src/supabase.ts (лента гостя подбирается по нему)
+        var anon = null;
+        try {
+          anon = localStorage.getItem('klubok.anon');
+          if (!anon && window.crypto && crypto.randomUUID) localStorage.setItem('klubok.anon', (anon = crypto.randomUUID()));
+        } catch (e) {}
         window.__klubokPre = {};
         [
-          ['rpc/feed?p_seed=' + encodeURIComponent(seed) + '&p_offset=0&p_limit=30', true],
+          anon && ['rpc/feed?p_seed=' + encodeURIComponent(seed) + '&p_offset=0&p_limit=30&p_anon=' + encodeURIComponent(anon), true],
           ['rpc/used_topics', false],
         ].forEach(function (x) {
+          if (!x) return;
           var auth = x[1] && token;
           var p = fetch(api + '/rest/v1/' + x[0] + (x[0].indexOf('?') < 0 ? '?' : '&') + 'apikey=' + key, auth ? { headers: { Authorization: 'Bearer ' + token } } : undefined).then(function (r) {
             if (!r.ok) throw new Error(r.status);

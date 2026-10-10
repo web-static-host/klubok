@@ -25,8 +25,11 @@ function cachedTopics(): string[] | null {
  * «Для вас» — лента-плитка по интересам (функция базы feed): в каждых 10 идеях 7 — по интересам, 2 — свежее и популярное,
  * 1 — случайное. Гостю — свежее и популярное. Подгружается порциями, когда долистали до конца.
  */
+/** когда загружена первая порция каждой ленты */
+const startedAt: Record<string, number> = {}
+
 export function Home() {
-  const { me, authReady, feedSeed, notInterested } = useStore()
+  const { me, authReady, feedSeed, notInterested, hiddenNow } = useStore()
   const [topic, setTopic] = useState<Topic | null>(null)
   const [used, setUsed] = useState<string[] | null>(cachedTopics)
   useEffect(() => {
@@ -49,10 +52,17 @@ export function Home() {
   const uid = me.id || null
   const { posts, list, more, retry } = usePaged(
     homeKey(topic, uid),
-    async (offset, limit) => restGet<PostRow[]>(feedQuery(feedSeed, offset, limit, topic), uid ? await accessToken() : undefined),
+    async (offset, limit) => {
+      // следующие порции — на момент первой (чтобы идеи при прокрутке не повторялись и не терялись)
+      const key = homeKey(topic, uid)
+      if (!offset) startedAt[key] = Date.now()
+      const age = offset && startedAt[key] ? (Date.now() - startedAt[key]) / 1000 : undefined
+      return restGet<PostRow[]>(feedQuery(feedSeed, offset, limit, topic, age), uid ? await accessToken() : undefined)
+    },
     { enabled: authReady, refresh: true },
   )
-  const shown = posts.filter((p) => !p.hidden && !notInterested.has(p.id))
+  // скрытые в этот заход остаются на месте — с вопросом «Что не так?»
+  const shown = posts.filter((p) => !p.hidden && (!notInterested.has(p.id) || hiddenNow[p.id]))
 
   return (
     <>

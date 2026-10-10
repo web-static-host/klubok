@@ -1,4 +1,4 @@
-import { API_URL, supabase } from './supabase'
+import { API_URL, anonId, supabase } from './supabase'
 
 /**
  * События для статистики автора и ленты «Для вас» (функция базы track): показы карточек, открытия идей,
@@ -19,19 +19,6 @@ interface Ev {
   d?: 'mobile' | 'desktop'
 }
 
-/** случайный номер этого браузера (гость) */
-function anonId(): string {
-  try {
-    let id = localStorage.getItem('klubok.anon')
-    if (!id) {
-      id = crypto.randomUUID()
-      localStorage.setItem('klubok.anon', id)
-    }
-    return id
-  } catch {
-    return 'nostorage'
-  }
-}
 const anon = anonId()
 
 // пропуск вошедшего — чтобы событие легло на него (его лента «Для вас» учится на нём)

@@ -10,7 +10,7 @@ export const API_URL: string = (import.meta.env.VITE_API_URL || DIRECT).replace(
 
 /** Чтение через функции базы — его можно безопасно повторить */
 const READ_RPC =
-  /\/rest\/v1\/rpc\/(my_stats|notifications_digest|is_admin|admin_[a-z_]+|profile_summary|feed|search_posts|tried_posts|used_topics)\b/
+  /\/rest\/v1\/rpc\/(my_stats|notifications_digest|is_admin|admin_[a-z_]+|profile_summary|feed|search_posts|tried_posts|used_topics|similar_posts)\b/
 
 /**
  * Связь через сервер-проброс иногда обрывается, когда запросов много сразу (вход: папки, подписки, уведомления, настройки…).
@@ -48,9 +48,34 @@ export const supabase = createClient(API_URL, import.meta.env.VITE_SUPABASE_PUBL
  */
 /** Порядок ленты «Для вас» по умолчанию: один на день (так index.html может начать загрузку заранее) */
 export const daySeed = () => new Date().toISOString().slice(0, 10)
-/** Порция ленты «Для вас» (функция базы feed) */
-export const feedQuery = (seed: string, offset: number, limit: number, topic?: string | null) =>
-  `rpc/feed?p_seed=${encodeURIComponent(seed)}&p_offset=${offset}&p_limit=${limit}${topic ? `&p_topic=${encodeURIComponent(topic)}` : ''}`
+
+/**
+ * Случайный номер этого браузера: по нему гостю подбирается лента и считаются разные люди в статистике (кто именно — не узнать).
+ * Тот же номер берёт index.html (klubok.anon). Нет доступа к хранилищу — свой номер на этот заход.
+ */
+let anon: string | undefined
+export function anonId(): string {
+  if (anon) return anon
+  try {
+    anon = localStorage.getItem('klubok.anon') ?? undefined
+    if (!anon) localStorage.setItem('klubok.anon', (anon = crypto.randomUUID()))
+  } catch {
+    anon = crypto.randomUUID()
+  }
+  return anon
+}
+
+/**
+ * Порция ленты «Для вас» (функция базы feed). age — сколько секунд назад загружена первая порция:
+ * следующие считаются на тот момент, чтобы при прокрутке идеи не повторялись и не терялись.
+ * Первая порция (без topic и age) должна совпадать с адресом в index.html.
+ */
+export const feedQuery = (seed: string, offset: number, limit: number, topic?: string | null, age?: number) =>
+  `rpc/feed?p_seed=${encodeURIComponent(seed)}&p_offset=${offset}&p_limit=${limit}${topic ? `&p_topic=${encodeURIComponent(topic)}` : ''}` +
+  `&p_anon=${encodeURIComponent(anonId())}${age ? `&p_age=${Math.round(age)}` : ''}`
+/** «Ещё идеи» под идеей: похожие по признакам (функция базы similar_posts) */
+export const similarQuery = (postId: string, offset: number, limit: number) =>
+  `rpc/similar_posts?p_post=${postId}&p_offset=${offset}&p_limit=${limit}&p_anon=${encodeURIComponent(anonId())}`
 /** Категории, в которых есть идеи */
 export const TOPICS_QUERY = 'rpc/used_topics'
 

@@ -4,7 +4,7 @@ import { ArrowLeft, BarChart3, Bookmark, ChefHat, CircleCheck, Flag, Link2, Sear
 import type { AiMeta, Try } from '../data/types'
 import { topicLabel } from '../data/types'
 import { Rejected, useStore, type PostRow } from '../store'
-import { accessToken, restGet } from '../supabase'
+import { accessToken, restGet, similarQuery } from '../supabase'
 import { trackFollowFromPost, trackLeave, trackOpen, trackShare, type Source } from '../track'
 import { MoreLoader, usePaged } from '../components/Paged'
 import { useUi } from '../ui-context'
@@ -85,14 +85,10 @@ export function PostPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pid, authReady, mine])
 
-  // «Ещё идеи»: с общими категориями, сначала — чаще сохраняемые; порциями
-  const topicsList = p ? `{${p.topics.map((t) => `"${t.replace(/["\\]/g, '')}"`).join(',')}}` : '{}'
+  // «Ещё идеи»: похожие по признакам (редкие общие — важнее), потом популярные; порциями. Вошедшему — без его «Не интересно»
   const more = usePaged(
     `more:${id}`,
-    (offset, limit) =>
-      restGet<PostRow[]>(
-        `posts?select=*&topics=ov.${encodeURIComponent(topicsList)}&id=neq.${id}&hidden=is.false&order=saves_count.desc,created_at.desc&offset=${offset}&limit=${limit}`,
-      ),
+    async (offset, limit) => restGet<PostRow[]>(similarQuery(id, offset, limit), me.id ? await accessToken() : undefined),
     { enabled: !!p },
   )
 

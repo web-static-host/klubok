@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { BarChart3, Bookmark, Check, CircleCheck, CircleX, EyeOff, Flag, Images } from 'lucide-react'
-import type { Post } from '../data/types'
+import { BarChart3, Bookmark, Check, CircleCheck, CircleX, EyeOff, Flag, Images, Loader2, Undo2 } from 'lucide-react'
+import { topicLabel, type Post } from '../data/types'
 import { useStore } from '../store'
 import { useUi } from '../ui-context'
 import { cx, num } from '../lib'
@@ -11,8 +11,8 @@ import { Avatar, Menu, Picture, TopicBadge } from './ui'
 /** Карточка ленты — DESIGN_WEB 3.3 */
 /** source — где показана карточка (для статистики автора: откуда приходят) */
 export function PinCard({ post, folderId, source }: { post: Post; folderId?: string; source: Source }) {
-  const { user, savedIn, folders, toggleDone, me, fresh, markNotInterested } = useStore()
-  const { openSave, openReport, toast } = useUi()
+  const { user, savedIn, folders, toggleDone, me, fresh, markNotInterested, hiddenNow } = useStore()
+  const { openSave, openReport } = useUi()
   const nav = useNavigate()
   const author = user(post.authorId)
   const okCount = post.triesOk
@@ -40,6 +40,14 @@ export function PinCard({ post, folderId, source }: { post: Post; folderId?: str
   }, [post.id, mine, source])
   // откуда открыли — странице идеи (для статистики автора)
   const from = { src: source }
+
+  // скрыли в «Для вас» — на месте карточки «Что не так?»
+  if (source === 'home' && hiddenNow[post.id])
+    return (
+      <article ref={box} className="min-w-0">
+        <HiddenPanel post={post} />
+      </article>
+    )
 
   return (
     <article ref={box} className="group fade-up min-w-0">
@@ -160,10 +168,7 @@ export function PinCard({ post, folderId, source }: { post: Post; folderId?: str
                           {
                             label: 'Не интересно',
                             icon: EyeOff,
-                            onClick: () => {
-                              markNotInterested(post.id)
-                              toast('Больше не покажем — и реже похожие')
-                            },
+                            onClick: () => markNotInterested(post.id),
                           },
                         ]
                       : []),
@@ -201,5 +206,81 @@ export function PinCard({ post, folderId, source }: { post: Post; folderId?: str
         </div>
       </div>
     </article>
+  )
+}
+
+const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1)
+
+/**
+ * Скрытая идея: «Что не понравилось?» — варианты из того, чем она отличается от понравившегося (до 2 слов), категория,
+ * «Слишком сложно», «Слишком долго», автор и «Уже попадалось». Ответ необязателен; «Вернуть» — отменить. DESIGN_WEB: «Не интересно».
+ */
+function HiddenPanel({ post }: { post: Post }) {
+  const { hiddenNow, answerNotInterested, undoNotInterested, user } = useStore()
+  const h = hiddenNow[post.id]
+  const label = (o: string) =>
+    o === 'seen'
+      ? 'Уже попадалось'
+      : o === 'd:сложно'
+        ? 'Слишком сложно'
+        : o === 'tm:долго'
+          ? 'Слишком долго'
+          : o.startsWith('t:')
+            ? topicLabel(o.slice(2))
+            : o.startsWith('u:')
+              ? `Автор: ${user(o.slice(2)).name}`
+              : cap(o)
+  const thanks = (o: string) =>
+    o === 'seen'
+      ? 'Понятно. Похожие оставим'
+      : o === 'd:сложно'
+        ? 'Сложных идей будет меньше'
+        : o === 'tm:долго'
+          ? 'Долгих идей будет меньше'
+          : o.startsWith('t:')
+            ? `Идей из «${topicLabel(o.slice(2))}» будет меньше`
+            : o.startsWith('u:')
+              ? `Идеи автора ${user(o.slice(2)).name} больше не покажем`
+              : `Идей про «${o}» будет меньше`
+  const ratio = post.images[0]?.ratio ?? 1
+  return (
+    <div
+      className="card fade-in flex flex-col justify-center gap-3 rounded-2xl p-4"
+      style={{ aspectRatio: `1 / ${Math.min(Math.max(ratio, 0.8), 1.6)}` }}
+      aria-live="polite"
+    >
+      <p className="flex items-center gap-2 text-sm font-bold">
+        <EyeOff size={16} strokeWidth={2.4} className="shrink-0 text-muted" />
+        {h.answer ? 'Спасибо, учтём' : 'Скрыли'}
+      </p>
+      {h.answer ? (
+        <p className="text-sm leading-5">{thanks(h.answer)}</p>
+      ) : h.options === null ? (
+        <Loader2 size={20} className="animate-spin text-muted" aria-label="Загружаем" />
+      ) : (
+        <>
+          <p className="text-xs leading-4 text-muted">Что не понравилось? Так лента станет точнее</p>
+          <div className="flex flex-wrap gap-1.5">
+            {[...h.options, 'seen'].map((o) => (
+              <button
+                key={o}
+                type="button"
+                onClick={() => answerNotInterested(post.id, o)}
+                className="press max-w-full truncate rounded-full border border-line bg-surface px-3 py-1.5 text-xs font-semibold hover:bg-active"
+              >
+                {label(o)}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      <button
+        type="button"
+        onClick={() => undoNotInterested(post.id)}
+        className="press inline-flex items-center gap-1.5 self-start rounded-full px-1 py-1 text-sm font-semibold text-accent hover:underline"
+      >
+        <Undo2 size={15} strokeWidth={2.4} /> Вернуть
+      </button>
+    </div>
   )
 }

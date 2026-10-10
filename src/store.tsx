@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { AiMeta, Folder, Img, Notice, NoticeSettings, Post, PostType, Reply, ReportTarget, Topic, Try, User } from './data/types'
-import { canonical, daySeed, restGet, supabase } from './supabase'
+import { anonId, canonical, daySeed, restGet, supabase } from './supabase'
 import { localCopy, shrink } from './lib'
 
 /**
@@ -36,6 +36,12 @@ export interface PagedList {
 }
 /** Порция идей: с какого места и сколько */
 export type Loader = (offset: number, limit: number) => Promise<PostRow[]>
+
+/** Скрытая в этот заход идея: варианты «Что не так?» (null — ещё не пришли) и ответ */
+export interface HiddenNow {
+  options: string[] | null
+  answer?: string
+}
 
 /** Ключ ленты «Для вас»: у каждого человека своя (по интересам), с категорией — отдельный список */
 export const homeKey = (topic: string | null, uid: string | null) => `home:${uid ?? 'guest'}:${topic ?? 'all'}`
@@ -102,8 +108,12 @@ interface Store {
 
   // ─── «Не интересно» и жалобы ───
   notInterested: Set<string>
-  /** убрать идею из ленты и меньше показывать похожие */
+  /** скрытые в этот заход: на месте карточки — «Что не так?» */
+  hiddenNow: Record<string, HiddenNow>
+  /** убрать идею из ленты и меньше показывать похожие (чем она отличается от того, что нравится) */
   markNotInterested: (postId: string) => void
+  /** ответ «Что не так?»: признак из вариантов или 'seen' — уже попадалось */
+  answerNotInterested: (postId: string, feature: string) => void
   undoNotInterested: (postId: string) => void
   /** пожаловаться; вернёт null, 'already' (уже жаловались) или текст ошибки */
   report: (type: ReportTarget, id: string, reason: string, comment: string, link: string) => Promise<null | 'already' | string>
@@ -279,8 +289,10 @@ function saveJson(key: string, v: unknown) {
     /* места нет или запрещено — не страшно */
   }
 }
-/** «Не интересно» у гостя — только в этом браузере */
+/** «Не интересно» у гостя: в базе — по номеру браузера, здесь — чтобы сразу убрать из ленты */
 const GUEST_NI = 'klubok.notInterested'
+/** старые «Не интересно» гостя (до 10 октября были только в браузере) уже отправлены в базу */
+const GUEST_NI_SYNCED = 'klubok.notInterested.synced'
 function loadGuestNi(): string[] {
   try {
     const v = JSON.parse(localStorage.getItem(GUEST_NI) ?? '[]')
@@ -419,6 +431,7 @@ export function StoreProvider({
   const [folders, setFolders] = useState<Folder[]>([])
   const [follows, setFollows] = useState<string[]>([])
   const [notInterested, setNotInterested] = useState<Set<string>>(() => new Set(loadGuestNi()))
+  const [hiddenNow, setHiddenNow] = useState<Record<string, HiddenNow>>({})
   const [notices, setNotices] = useState<Notice[]>([])
   const [noticesLoaded, setNoticesLoaded] = useState(false)
   const [noticeSettings, setNoticeSettings] = useState<NoticeSettings>(DEFAULT_SETTINGS)
@@ -626,6 +639,19 @@ export function StoreProvider({
     },
     [ensureUsers],
   )
+
+  // старые «Не интересно» гостя (раньше были только в браузере) — один раз в базу, чтобы лента училась и на них
+  useEffect(() => {
+    if (!authKnown || uid || !loadGuestNi().length) return
+    try {
+      if (localStorage.getItem(GUEST_NI_SYNCED) === '1') return
+      localStorage.setItem(GUEST_NI_SYNCED, '1')
+    } catch {
+      return
+    }
+    for (const pid of loadGuestNi().slice(-30))
+      supabase.rpc('not_interested_set', { p_post: pid, p_on: true, p_anon: anonId() }).then(() => {})
+  }, [authKnown, uid])
 
   // ─── свои данные: папки, подписки, «не интересно», настройки уведомлений ───
   const [mineAttempt, setMineAttempt] = useState(0)
@@ -986,11 +1012,25 @@ export function StoreProvider({
     savedIn: (pid) => folders.filter((f) => f.postIds.includes(pid)),
 
     notInterested,
+    hiddenNow,
     markNotInterested: (pid) => {
       setNotInterested((s) => new Set(s).add(pid))
-      dropFromLists(pid, (k) => k.startsWith('home:'))
-      if (uid) save(supabase.from('not_interested').upsert({ user_id: uid, post_id: pid }, { ignoreDuplicates: true }))
-      else saveJson(GUEST_NI, [...loadGuestNi(), pid])
+      setHiddenNow((h) => ({ ...h, [pid]: { options: null } }))
+      if (!uid) saveJson(GUEST_NI, [...loadGuestNi(), pid])
+      supabase.rpc('not_interested_set', { p_post: pid, p_on: true, p_anon: anonId() }).then(({ data, error }) => {
+        const options = !error && Array.isArray(data) ? (data as string[]) : []
+        setHiddenNow((h) => (h[pid] ? { ...h, [pid]: { ...h[pid], options } } : h))
+      })
+    },
+    answerNotInterested: (pid, feature) => {
+      setHiddenNow((h) => (h[pid] ? { ...h, [pid]: { ...h[pid], answer: feature } } : h))
+      save(supabase.rpc('not_interested_set', { p_post: pid, p_on: true, p_feature: feature, p_anon: anonId() }))
+      // «не показывать автора» — его карточки из ленты убираем сразу
+      if (feature.startsWith('u:')) {
+        const author = feature.slice(2)
+        const others = Object.values(postMap).filter((p) => p.authorId === author && p.id !== pid)
+        for (const p of others) dropFromLists(p.id, (k) => k.startsWith('home:'))
+      }
     },
     undoNotInterested: (pid) => {
       setNotInterested((s) => {
@@ -998,8 +1038,13 @@ export function StoreProvider({
         n.delete(pid)
         return n
       })
-      if (uid) save(supabase.from('not_interested').delete().eq('user_id', uid).eq('post_id', pid))
-      else
+      setHiddenNow((h) => {
+        const n = { ...h }
+        delete n[pid]
+        return n
+      })
+      save(supabase.rpc('not_interested_set', { p_post: pid, p_on: false, p_anon: anonId() }))
+      if (!uid)
         saveJson(
           GUEST_NI,
           loadGuestNi().filter((x) => x !== pid),

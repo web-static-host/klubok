@@ -79,6 +79,14 @@ const MAT = new RegExp(
   'u',
 )
 
+/** Мат в тексте — в том числе со звёздочкой вместо буквы («х*й», «п#здец», «е*ать»): пробуем подставить буквы */
+export function hasMat(text: string): boolean {
+  if (MAT.test(normalize(text))) return true
+  const masked = /(?<=[а-яёa-z])[*#]+(?=[а-яёa-z])/giu
+  if (!masked.test(text)) return false
+  return ['у', 'и', 'е', 'а', 'о', 'ё', 'я', 'б', 'з'].some((v) => MAT.test(normalize(text.replace(masked, v))))
+}
+
 function normalize(s: string) {
   let t = s.toLowerCase().replace(/[a-z0-9@ё]/g, (c) => LOOKALIKE[c] ?? c)
   // «х.у.й», «х-у-й», «х*й»: знаки между буквами убираем
@@ -109,7 +117,7 @@ export function imageTextCheck(text: string): string[] {
   const reasons: string[] = []
   if (!text.trim()) return reasons
   if (STRICT_LINKS.some((r) => r.test(text))) reasons.push('На картинке есть ссылка или адрес сайта')
-  if (MAT.test(normalize(text))) reasons.push('На картинке есть нецензурная брань')
+  if (hasMat(text)) reasons.push('На картинке есть нецензурная брань')
   return reasons
 }
 
@@ -118,7 +126,7 @@ export function quickTextCheck(text: string): string[] {
   const reasons: string[] = []
   if (!text.trim()) return reasons
   if (LINK_PATTERNS.some((r) => r.test(text))) reasons.push('Ссылки, адреса сайтов, телефоны и контакты публиковать нельзя (в том числе через точки и пробелы)')
-  if (MAT.test(normalize(text))) reasons.push('Нецензурная брань запрещена')
+  if (hasMat(text)) reasons.push('Нецензурная брань запрещена')
   return reasons
 }
 
@@ -311,7 +319,7 @@ function humanReason(r: string): string {
   // ИИ, отказывая, иногда переписывает строку из списка правил («мат и грубая брань…»), хотя этого на картинке нет, — без цитаты не верим
   if (isRuleCopy(r)) return ''
   // ИИ по просьбе цитирует найденное («мат: „…“») — нам это нужно, чтобы отличить находку от переписанного правила, но человеку само слово не показываем
-  if (/(^|[^а-яё])(мат(?![а-яё])|матер[нщ]|бран[ьн]|нецензур|ругат|обсцен)/i.test(r) || MAT.test(normalize(r))) return 'Нецензурная брань запрещена'
+  if (/(^|[^а-яё])(мат(?![а-яё])|матер[нщ]|бран[ьн]|нецензур|ругат|обсцен)/i.test(r) || hasMat(r)) return 'Нецензурная брань запрещена'
   if (/оскорб/i.test(r)) return 'Оскорбления запрещены'
   return r.charAt(0).toUpperCase() + r.slice(1)
 }

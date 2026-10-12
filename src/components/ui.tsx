@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { MoreHorizontal, type LucideIcon } from 'lucide-react'
 import type { Img, Topic, User } from '../data/types'
 import { topicLabel } from '../data/types'
-import { THUMB_W, cx, imgSrc, localCopy } from '../lib'
+import { THUMB_W, cx, localCopy } from '../lib'
 import { viaApi } from '../supabase'
 
 export function Picture({
@@ -29,11 +29,41 @@ export function Picture({
   // в ленте и миниатюрах (до 600 px) — уменьшенная копия, если есть; крупно — оригинал. Копия не загрузилась — сразу оригинал
   const [noThumb, setNoThumb] = useState(false)
   const thumb = !noThumb && w && w <= THUMB_W && img.thumb
-  const src = thumb ? (localCopy.get(img.thumb!) ?? viaApi(img.thumb!)) : imgSrc(img)
+  const raw = (thumb ? img.thumb : img.src) ?? ''
+  const local = localCopy.get(raw)
+  const src = local ?? viaApi(raw)
+  // картинка на экране «зависла» (соединение не отвечает) — тот же файл другим запросом; что придёт первым, то и покажем
+  const [spare, setSpare] = useState<{ raw: string; url: string } | null>(null)
+  const ref = useRef<HTMLImageElement>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (loaded || local || !el) return
+    // уже загрузилась, а событие пропустили
+    if (el.complete && el.naturalWidth) return setLoaded(true)
+    // через 6 с — ещё раз через сервер, через 12 с — напрямую из хранилища (медленнее, но не через тот же сервер)
+    const tries = [`${src}${src.includes('?') ? '&' : '?'}s=1`, raw]
+    let step = 0
+    let timer: ReturnType<typeof setTimeout>
+    const tick = () => {
+      if (el.complete && el.naturalWidth) return setLoaded(true)
+      const r = el.getBoundingClientRect()
+      if (r.bottom > -300 && r.top < window.innerHeight + 300) {
+        const url = tries[step++]
+        const probe = new Image()
+        probe.onload = () => setSpare((a) => (a?.raw === raw ? a : { raw, url }))
+        probe.src = url
+      }
+      if (step < tries.length) timer = setTimeout(tick, 6000)
+    }
+    timer = setTimeout(tick, 6000)
+    return () => clearTimeout(timer)
+  }, [raw, src, local, loaded])
+  const base = spare?.raw === raw ? spare.url : src
   return (
     <div className={cx('relative overflow-hidden bg-elevated', className)} style={fill ? undefined : { aspectRatio: `1 / ${img.ratio}` }}>
       <img
-        src={retry ? `${src}${src.includes('?') ? '&' : '?'}r=${retry}` : src}
+        ref={ref}
+        src={retry ? `${base}${base.includes('?') ? '&' : '?'}r=${retry}` : base}
         alt={alt}
         loading="lazy"
         decoding="async"
